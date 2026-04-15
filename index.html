@@ -492,12 +492,6 @@
         <div class="mod-segments-list" id="modList"></div>
       </div>
 
-      <!-- Note distribution -->
-      <div class="card">
-        <div class="card-hdr">Note Distribution</div>
-        <div class="histogram" id="histogram"></div>
-      </div>
-
       <!-- Download -->
       <button class="btn-download" id="btnDownload">Download Tagged MIDI</button>
       <button class="btn-download btn-download-chord" id="btnDownloadChord" disabled>Download Chord MIDI</button>
@@ -1844,25 +1838,8 @@ function renderAnalysis(entry){
   document.getElementById('keySelect').value=entry.root;
   document.getElementById('scaleSelect').value=entry.scaleIndex;
 
-  refreshHistogram(entry.histogram, entry.root, entry.scaleIndex);
   refreshPiano(entry.histogram, entry.root, entry.scaleIndex, entry.noteFreqMap, APP.activeNotes);
   refreshModulations(entry);
-}
-
-function refreshHistogram(hist, root, si){
-  const max=Math.max(...hist,1);
-  const set=new Set(SCALES[si].i);
-  const el=document.getElementById('histogram');
-  el.innerHTML='';
-  for(let pc=0;pc<12;pc++){
-    const rel=(pc-root+12)%12;
-    const cls=pc===root?'root':set.has(rel)?'in':'out';
-    const h=Math.max((hist[pc]/max)*54,hist[pc]>0?3:2);
-    el.innerHTML+=`<div class="hb-wrap">
-      <div class="hb-bar ${cls}" style="height:${h}px"></div>
-      <div class="hb-lbl">${NOTE_NAMES[pc]}</div>
-    </div>`;
-  }
 }
 
 
@@ -2274,14 +2251,12 @@ function initDropdowns(){
     if(APP.selected<0) return;
     APP.files[APP.selected].root=parseInt(ks.value,10);
     const e=APP.files[APP.selected];
-    refreshHistogram(e.histogram,e.root,e.scaleIndex);
     refreshPiano(e.histogram,e.root,e.scaleIndex,e.noteFreqMap,APP.activeNotes);
   });
   ss.addEventListener('change',()=>{
     if(APP.selected<0) return;
     APP.files[APP.selected].scaleIndex=parseInt(ss.value,10);
     const e=APP.files[APP.selected];
-    refreshHistogram(e.histogram,e.root,e.scaleIndex);
     refreshPiano(e.histogram,e.root,e.scaleIndex,e.noteFreqMap,APP.activeNotes);
   });
 }
