@@ -1,10 +1,10 @@
-<!-- MIDI Scale Analyzer v12 — 2026-04-15 -->
+<!-- MIDI Harmony Analyzer v13 — 2026-04-15 -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MIDI Scale Analyzer</title>
+  <title>MIDI Harmony Analyzer</title>
   <style>
     :root {
       --bg:     #0b0b18;
@@ -378,8 +378,8 @@
 
 <header class="hdr">
   <div>
-    <div class="hdr-title">MIDI Scale Analyzer</div>
-    <div class="hdr-sub">Detect key &amp; scale · Weighted analysis · Tag CC 85 / CC 86 · Playback</div>
+    <div class="hdr-title">MIDI Harmony Analyzer</div>
+    <div class="hdr-sub">Detect key &amp; scale · Tag CC 85 / CC 86 · SATB chord export · Playback</div>
   </div>
 </header>
 
@@ -446,28 +446,17 @@
         </div>
       </div>
 
-      <!-- Analysis weights -->
+      <!-- Piano keyboard (under playback) -->
       <div class="card">
-        <div class="card-hdr">Analysis Weights</div>
-        <div class="w-row">
-          <span class="w-label">Pitch</span>
-          <input type="range" id="wPitch" min="0" max="2" step="0.1" value="1.0">
-          <span class="w-val" id="wPitchVal">1.0</span>
+        <div class="card-hdr">Piano Keyboard</div>
+        <div class="piano-wrap">
+          <canvas id="pianoCanvas" height="120"></canvas>
         </div>
-        <div class="w-row">
-          <span class="w-label">Duration</span>
-          <input type="range" id="wDur" min="0" max="2" step="0.1" value="0.5">
-          <span class="w-val" id="wDurVal">0.5</span>
-        </div>
-        <div class="w-row">
-          <span class="w-label">Velocity</span>
-          <input type="range" id="wVel" min="0" max="2" step="0.1" value="0.5">
-          <span class="w-val" id="wVelVal">0.5</span>
-        </div>
-        <div class="w-row">
-          <span class="w-label">Beat Position</span>
-          <input type="range" id="wPos" min="0" max="2" step="0.1" value="1.0">
-          <span class="w-val" id="wPosVal">1.0</span>
+        <div class="piano-legend">
+          <div class="piano-legend-item"><div class="legend-dot" style="background:var(--green)"></div>Root</div>
+          <div class="piano-legend-item"><div class="legend-dot" style="background:var(--accent)"></div>In scale</div>
+          <div class="piano-legend-item"><div class="legend-dot" style="background:var(--s3)"></div>Out of scale</div>
+          <span class="note">Brightness = note frequency</span>
         </div>
       </div>
 
@@ -507,53 +496,6 @@
       <div class="card">
         <div class="card-hdr">Note Distribution</div>
         <div class="histogram" id="histogram"></div>
-      </div>
-
-      <!-- Piano keyboard -->
-      <div class="card">
-        <div class="card-hdr">Piano Keyboard</div>
-        <div class="piano-wrap">
-          <canvas id="pianoCanvas" height="120"></canvas>
-        </div>
-        <div class="piano-legend">
-          <div class="piano-legend-item"><div class="legend-dot" style="background:var(--green)"></div>Root</div>
-          <div class="piano-legend-item"><div class="legend-dot" style="background:var(--accent)"></div>In scale</div>
-          <div class="piano-legend-item"><div class="legend-dot" style="background:var(--s3)"></div>Out of scale</div>
-          <span class="note">Brightness = note frequency</span>
-        </div>
-      </div>
-
-      <!-- CC values — CC 85 is root note, CC 86 is scale index -->
-      <div class="card">
-        <div class="card-hdr">CC Values to be Written</div>
-        <div class="cc-grid">
-          <div class="cc-box">
-            <div class="cc-lbl">CC 85 — Root Note</div>
-            <div class="cc-num"  id="cc20num">—</div>
-            <div class="cc-name" id="cc20name">—</div>
-          </div>
-          <div class="cc-box">
-            <div class="cc-lbl">CC 86 — Scale Index</div>
-            <div class="cc-num"  id="cc21num">—</div>
-            <div class="cc-name" id="cc21name">—</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Confidence -->
-      <div class="card">
-        <div class="card-hdr">Detection Confidence</div>
-        <div class="conf-row">
-          <span class="conf-label">Notes covered by detected scale</span>
-          <span class="conf-val" id="confVal">—</span>
-        </div>
-        <div class="bar-bg"><div class="bar-fill" id="confBar" style="width:0%"></div></div>
-      </div>
-
-      <!-- Top alternatives -->
-      <div class="card">
-        <div class="card-hdr">Top Alternatives</div>
-        <div id="altList"></div>
       </div>
 
       <!-- Download -->
@@ -1809,35 +1751,6 @@ function analyzeEntry(entry){
   }
 }
 
-let _debounce=null;
-function onWeightChange(){
-  APP.weights={
-    pitch:    parseFloat(document.getElementById('wPitch').value),
-    duration: parseFloat(document.getElementById('wDur').value),
-    velocity: parseFloat(document.getElementById('wVel').value),
-    position: parseFloat(document.getElementById('wPos').value),
-  };
-  document.getElementById('wPitchVal').textContent=APP.weights.pitch.toFixed(1);
-  document.getElementById('wDurVal').textContent=APP.weights.duration.toFixed(1);
-  document.getElementById('wVelVal').textContent=APP.weights.velocity.toFixed(1);
-  document.getElementById('wPosVal').textContent=APP.weights.position.toFixed(1);
-  clearTimeout(_debounce);
-  _debounce=setTimeout(()=>{
-    if(APP.selected<0) return;
-    const entry=APP.files[APP.selected];
-    analyzeEntry(entry);
-    if(!entry.histogram||!entry.candidates) return;
-    // Update dropdowns to newly detected key/scale
-    document.getElementById('keySelect').value=entry.root;
-    document.getElementById('scaleSelect').value=entry.scaleIndex;
-    refreshHistogram(entry.histogram, entry.root, entry.scaleIndex);
-    refreshPiano(entry.histogram, entry.root, entry.scaleIndex, entry.noteFreqMap, APP.activeNotes);
-    refreshCC(entry.root, entry.scaleIndex);
-    refreshConfidence(entry.histogram, entry.root, entry.scaleIndex);
-    refreshAlternatives(entry.candidates);
-    refreshModulations(entry);
-  },120);
-}
 
 
 // ─────────────────────────────────────────────────────────────
@@ -1933,9 +1846,6 @@ function renderAnalysis(entry){
 
   refreshHistogram(entry.histogram, entry.root, entry.scaleIndex);
   refreshPiano(entry.histogram, entry.root, entry.scaleIndex, entry.noteFreqMap, APP.activeNotes);
-  refreshCC(entry.root, entry.scaleIndex);
-  refreshConfidence(entry.histogram, entry.root, entry.scaleIndex);
-  refreshAlternatives(entry.candidates);
   refreshModulations(entry);
 }
 
@@ -1955,34 +1865,6 @@ function refreshHistogram(hist, root, si){
   }
 }
 
-function refreshCC(root, si){
-  document.getElementById('cc20num').textContent  = root;
-  document.getElementById('cc20name').textContent = NOTE_NAMES[root];
-  document.getElementById('cc21num').textContent  = si;
-  document.getElementById('cc21name').textContent = SCALES[si].name;
-}
-
-function refreshConfidence(hist, root, si){
-  const {coverage}=scoreHist(hist,root,si);
-  const pct=Math.round(coverage*100);
-  document.getElementById('confVal').textContent=pct+'%';
-  document.getElementById('confBar').style.width=pct+'%';
-}
-
-function refreshAlternatives(candidates){
-  const top=candidates.slice(0,5);
-  const maxScore=Math.max(top[0].score,0.001);
-  document.getElementById('altList').innerHTML=top.map((c,i)=>{
-    const scorePct=Math.round(Math.max(c.score,0)*100);
-    const barW=(Math.max(c.score,0)/maxScore*100).toFixed(1);
-    return `<div class="alt-item">
-      <div class="alt-rank">${i+1}</div>
-      <div class="alt-name">${NOTE_NAMES[c.root]} ${SCALES[c.scaleIndex].name}</div>
-      <div class="alt-bg"><div class="alt-fill" style="width:${barW}%"></div></div>
-      <div class="alt-pct">${scorePct}%</div>
-    </div>`;
-  }).join('');
-}
 
 function refreshModulations(entry){
   const card     = document.getElementById('modCard');
@@ -2394,8 +2276,6 @@ function initDropdowns(){
     const e=APP.files[APP.selected];
     refreshHistogram(e.histogram,e.root,e.scaleIndex);
     refreshPiano(e.histogram,e.root,e.scaleIndex,e.noteFreqMap,APP.activeNotes);
-    refreshCC(e.root,e.scaleIndex);
-    refreshConfidence(e.histogram,e.root,e.scaleIndex);
   });
   ss.addEventListener('change',()=>{
     if(APP.selected<0) return;
@@ -2403,8 +2283,6 @@ function initDropdowns(){
     const e=APP.files[APP.selected];
     refreshHistogram(e.histogram,e.root,e.scaleIndex);
     refreshPiano(e.histogram,e.root,e.scaleIndex,e.noteFreqMap,APP.activeNotes);
-    refreshCC(e.root,e.scaleIndex);
-    refreshConfidence(e.histogram,e.root,e.scaleIndex);
   });
 }
 
@@ -2423,11 +2301,6 @@ async function handleDrop(e){
 
 document.addEventListener('DOMContentLoaded',()=>{
   initDropdowns();
-
-  // Weight sliders
-  ['wPitch','wDur','wVel','wPos'].forEach(id=>
-    document.getElementById(id).addEventListener('input',onWeightChange)
-  );
 
   // Modulation sliders
   document.getElementById('modWindow').addEventListener('input', function(){
