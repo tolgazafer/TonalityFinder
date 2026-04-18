@@ -1224,15 +1224,22 @@ function buildChordTrackEvs(segments, pitched, tpb, tpm, lastTick, ch){
         changes.push({ startTick: tick, tones });
     }
 
-    // Step 4 — emit noteOn / noteOff
-    for(let ci = 0; ci < changes.length; ci++){
-      const { startTick, tones } = changes[ci];
-      const endTick = ci + 1 < changes.length ? changes[ci + 1].startTick : segEnd;
-      const offTick = Math.max(startTick + 1, endTick - gap);
-      for(const note of tones){
-        const n = Math.max(0, Math.min(127, note));
-        noteEvs.push({ _tick: startTick, kind:'noteOn',  channel: ch, note: n, velocity: 64 });
-        noteEvs.push({ _tick: offTick,   kind:'noteOff', channel: ch, note: n, velocity: 0  });
+    // Step 4 — emit noteOn / noteOff; same note in consecutive chords → legato (one sustained note)
+    const numVoices = changes[0]?.tones.length ?? 4;
+    for(let vi = 0; vi < numVoices; vi++){
+      const spans = [];
+      for(let ci = 0; ci < changes.length; ci++){
+        const { startTick, tones } = changes[ci];
+        const note     = Math.max(0, Math.min(127, tones[vi]));
+        const chordEnd = ci + 1 < changes.length ? changes[ci + 1].startTick : segEnd;
+        const last     = spans[spans.length - 1];
+        if(last && last.note === note) last.endTick = chordEnd;
+        else spans.push({ note, startTick, endTick: chordEnd });
+      }
+      for(const span of spans){
+        const offTick = Math.max(span.startTick + 1, span.endTick - gap);
+        noteEvs.push({ _tick: span.startTick, kind:'noteOn',  channel: ch, note: span.note, velocity: 64 });
+        noteEvs.push({ _tick: offTick,        kind:'noteOff', channel: ch, note: span.note, velocity: 0  });
       }
     }
   }
