@@ -372,6 +372,81 @@
 
     .hidden { display: none !important; }
     .mt8 { margin-top: 8px; }
+
+    /* ── YOUTUBE WORKSPACE ── */
+    #ytWorkspace {
+      display: none; flex-direction: column;
+      overflow-y: auto; padding: 28px 24px;
+      min-height: calc(100vh - 65px);
+    }
+    #ytWorkspace.visible { display: flex; }
+    .yt-inner { max-width: 860px; margin: 0 auto; width: 100%; }
+    .yt-url-row { display: flex; gap: 8px; margin-bottom: 18px; }
+    .yt-url-row input {
+      flex: 1; padding: 10px 14px; border-radius: 8px;
+      border: 1px solid var(--border); background: var(--s1);
+      color: var(--text); font-size: 14px; font-family: inherit; outline: none;
+      transition: border-color 0.18s;
+    }
+    .yt-url-row input:focus { border-color: var(--accent); }
+    .yt-player-wrap {
+      width: 100%; aspect-ratio: 16/9; background: #000;
+      border-radius: var(--r); overflow: hidden; margin-bottom: 18px;
+    }
+    .yt-player-wrap iframe { width: 100%; height: 100%; border: none; }
+    .yt-controls { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+    .yt-status { font-size: 12px; color: var(--dim); flex: 1; min-width: 0; }
+    .yt-chord-display {
+      font-size: 36px; font-weight: 700; letter-spacing: 3px;
+      min-height: 56px; color: var(--accent); margin-bottom: 4px;
+    }
+    .yt-chord-sub { font-size: 12px; color: var(--dim); margin-bottom: 18px; }
+    .yt-timeline-bar {
+      width: 100%; height: 44px; border-radius: var(--r);
+      background: var(--s1); border: 1px solid var(--border);
+      overflow: hidden; margin-bottom: 18px; position: relative;
+    }
+    .yt-tl-segs { display: flex; height: 100%; }
+    .yt-tl-seg {
+      height: 100%; display: flex; align-items: center; justify-content: center;
+      font-size: 9px; font-weight: 700; color: #fff; overflow: hidden;
+      white-space: nowrap; border-right: 1px solid rgba(0,0,0,.2);
+    }
+    .yt-playhead {
+      position: absolute; top: 0; left: 0; width: 2px; height: 100%;
+      background: #fff; pointer-events: none; transition: left 0.15s linear;
+    }
+    .yt-row { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+    .btn-yt {
+      padding: 9px 18px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      font-family: inherit; cursor: pointer; border: none; color: #fff;
+      background: linear-gradient(135deg, var(--accent), #5b4de0);
+      transition: opacity 0.18s; white-space: nowrap;
+    }
+    .btn-yt:hover { opacity: 0.88; }
+    .btn-yt:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn-yt.sec {
+      background: var(--s2); border: 1px solid var(--border); color: var(--dim);
+    }
+    .btn-yt.sec:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+    .btn-yt.danger {
+      background: rgba(255,107,138,.15); border: 1px solid var(--red); color: var(--red);
+    }
+    .btn-yt.green { background: linear-gradient(135deg, var(--green), #009e83); }
+    .yt-rec-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+      background: var(--red); margin-right: 6px;
+      animation: ytBlink 1s ease-in-out infinite;
+    }
+    @keyframes ytBlink { 0%,100%{opacity:1} 50%{opacity:.15} }
+    .dz-sep { color: var(--dim); font-size: 12px; margin: 10px 0 6px; }
+    .btn-outline-yt {
+      padding: 8px 22px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      font-family: inherit; cursor: pointer; color: var(--accent);
+      background: rgba(123,104,238,.1); border: 1px solid var(--accent);
+      transition: background 0.18s;
+    }
+    .btn-outline-yt:hover { background: rgba(123,104,238,.22); }
   </style>
 </head>
 <body>
@@ -379,7 +454,7 @@
 <header class="hdr">
   <div>
     <div class="hdr-title">MIDI Harmony Analyzer</div>
-    <div class="hdr-sub">Detect key &amp; scale · Tag CC 85 / CC 86 · SATB chord export · Playback</div>
+    <div class="hdr-sub">Detect key &amp; scale · Tag CC 85 / CC 86 · SATB chord export · YouTube harmony extraction</div>
   </div>
 </header>
 
@@ -393,6 +468,8 @@
       <button class="btn-outline" onclick="document.getElementById('fileInput').click()">Select Files</button>
       <button class="btn-outline" onclick="document.getElementById('folderInput').click()">Select Folder</button>
     </div>
+    <div class="dz-sep">or analyze from</div>
+    <button class="btn-outline-yt" id="ytModeBtn">▶ YouTube</button>
     <input type="file" id="fileInput"   multiple accept=".mid,.midi" style="display:none">
     <input type="file" id="folderInput" webkitdirectory               style="display:none">
   </div>
@@ -500,6 +577,38 @@
     </div><!-- /analysisPanel -->
   </main>
 </div><!-- /workspace -->
+
+<!-- YOUTUBE WORKSPACE -->
+<div id="ytWorkspace">
+  <div class="yt-inner">
+    <div class="yt-url-row">
+      <input type="text" id="ytUrlInput" placeholder="Paste YouTube URL…" autocomplete="off" spellcheck="false">
+      <button class="btn-yt" id="ytLoadBtn">Load</button>
+      <button class="btn-yt sec" id="ytBackBtn">← Back</button>
+    </div>
+    <div class="yt-player-wrap"><div id="ytPlayerEl"></div></div>
+    <div class="yt-controls">
+      <button class="btn-yt" id="ytCaptureBtn" disabled>Capture &amp; Analyze</button>
+      <button class="btn-yt danger" id="ytStopCaptureBtn" disabled>■ Stop</button>
+      <span class="yt-status" id="ytStatus">Load a YouTube video to begin.</span>
+    </div>
+    <div class="yt-chord-display" id="ytChordDisplay"></div>
+    <div class="yt-chord-sub" id="ytChordSub"></div>
+    <div class="yt-timeline-bar" id="ytTimelineBar" style="display:none">
+      <div class="yt-tl-segs" id="ytTlSegs"></div>
+      <div class="yt-playhead" id="ytPlayhead"></div>
+    </div>
+    <div class="yt-row" id="ytSyncRow" style="display:none">
+      <button class="btn-yt green" id="ytSyncPlayBtn">▶ Play Synced</button>
+      <button class="btn-yt sec"  id="ytSyncStopBtn">■ Stop</button>
+    </div>
+    <div class="yt-row" id="ytDlRow" style="display:none">
+      <button class="btn-yt"       id="ytDlChordBtn">Download Chord MIDI</button>
+      <button class="btn-yt sec"   id="ytDlBassBtn">Download Bass MIDI</button>
+      <button class="btn-yt sec"   id="ytDlMelodyBtn">Download Melody MIDI</button>
+    </div>
+  </div>
+</div>
 
 <script>
 'use strict';
@@ -2245,6 +2354,416 @@ function downloadAll(){
 
 
 // ─────────────────────────────────────────────────────────────
+// YOUTUBE HARMONY ANALYZER
+// ─────────────────────────────────────────────────────────────
+
+const YT_FFT_SIZE    = 8192;
+const YT_INTERVAL_MS = 150;   // analysis frame rate
+const YT_BPM         = 120;
+const YT_TPB         = 480;
+
+// Chord type names parallel to CHORD_TYPES array
+const CHORD_TYPE_NAMES = ['','m','dim','aug','7','maj7','m7','dim7','m7b5'];
+
+// Colour palette for chord timeline segments
+const TL_COLORS = [
+  '#6c5ce7','#0984e3','#00b894','#e17055','#fd79a8',
+  '#fdcb6e','#a29bfe','#55efc4','#d63031','#74b9ff','#e84393','#00cba9',
+];
+
+const YTA = {
+  player:       null,   // YT.Player instance
+  audioCtx:     null,
+  analyser:     null,
+  stream:       null,
+  recording:    false,
+  timeline:     [],     // [{time, rootPc, intervals, chordNotes, bassNote, melodyNote}]
+  frameTimer:   null,
+  prevVoicing:  null,
+  chordEntries: [],
+  bassEntries:  [],
+  melodyEntries:[],
+  chordMidi:    null,
+  bassMidi:     null,
+  melodyMidi:   null,
+  midiPlayer:   null,
+  syncRaf:      null,
+  videoTitle:   'YouTube',
+};
+
+// ── Extract YouTube video ID from any YouTube URL ─────────────
+function ytVideoId(url){
+  const m = url.match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+// ── Chroma features from a frequency-band slice of FFT data ───
+// freqData: Float32Array (dB), returns normalised 12-bin array or null.
+function chromaFromFFT(freqData, sampleRate, fftSize, freqLo, freqHi){
+  const chroma = new Array(12).fill(0);
+  const bw     = sampleRate / fftSize;
+  for(let bin = 1; bin < freqData.length; bin++){
+    const freq = bin * bw;
+    if(freq < freqLo || freq > freqHi) continue;
+    const db = freqData[bin];
+    if(db < -80) continue;
+    const pc = ((Math.round(12 * Math.log2(freq / 440) + 69) % 12) + 12) % 12;
+    chroma[pc] += Math.pow(10, db / 20);
+  }
+  const sum = chroma.reduce((a, b) => a + b, 0);
+  return sum > 0 ? chroma.map(v => v / sum) : null;
+}
+
+// ── Dominant MIDI note number in a frequency band (peak-pick) ─
+function dominantMidiNote(freqData, sampleRate, fftSize, freqLo, freqHi){
+  const bw = sampleRate / fftSize;
+  let maxDb = -80, maxBin = -1;
+  for(let bin = 1; bin < freqData.length; bin++){
+    const freq = bin * bw;
+    if(freq < freqLo || freq > freqHi) continue;
+    if(freqData[bin] > maxDb){ maxDb = freqData[bin]; maxBin = bin; }
+  }
+  if(maxBin < 0) return null;
+  return Math.round(12 * Math.log2((maxBin * bw) / 440) + 69);
+}
+
+// ── Seconds → MIDI ticks at fixed 120 BPM ────────────────────
+function ytSecToTick(sec){ return Math.round(sec * YT_TPB * YT_BPM / 60); }
+
+// ── Human-readable chord label ────────────────────────────────
+function ytChordLabel(rootPc, intervals){
+  const idx = CHORD_TYPES.findIndex(
+    t => t.length === intervals.length && t.every((v,i) => v === intervals[i])
+  );
+  return NOTE_NAMES[rootPc] + (CHORD_TYPE_NAMES[idx] ?? '');
+}
+
+// ── Build MIDI from time-stamped note entries ─────────────────
+// entries: [{startSec, endSec, notes:[midiNote…], channel}]
+function buildMidiFromEntries(entries, label){
+  const absEvs = [];
+  const gap    = Math.round(YT_TPB * 0.08);
+  for(const e of entries){
+    const st = ytSecToTick(e.startSec);
+    const et = ytSecToTick(e.endSec);
+    const ot = Math.max(st + 1, et - gap);
+    for(const note of e.notes){
+      const n = Math.max(0, Math.min(127, note));
+      absEvs.push({_tick:st, kind:'noteOn',  channel:e.channel, note:n, velocity:72});
+      absEvs.push({_tick:ot, kind:'noteOff', channel:e.channel, note:n, velocity:0 });
+    }
+  }
+  absEvs.sort((a, b) => a._tick - b._tick);
+  const nameBytes = Array.from(label).map(c => c.charCodeAt(0));
+  const track = [
+    {delta:0, kind:'meta', metaType:0x03, data:nameBytes},
+    {delta:0, kind:'meta', metaType:0x51, data:[0x07,0xA1,0x20]}, // 120 BPM
+  ];
+  let prev = 0;
+  for(const ev of absEvs){
+    const {_tick, ...rest} = ev;
+    track.push({...rest, delta: Math.max(0, _tick - prev)});
+    prev = _tick;
+  }
+  const lastTick = absEvs.length ? absEvs[absEvs.length-1]._tick : 0;
+  track.push({delta: Math.max(0, lastTick - prev), kind:'meta', metaType:0x2F, data:[]});
+  return {format:0, numTracks:1, division:YT_TPB, tracks:[track]};
+}
+
+// ── Merge consecutive frames with identical key into spans ────
+function compressToEntries(timeline, keyFn, notesFn, channel){
+  const entries = [];
+  for(const frame of timeline){
+    const notes = notesFn(frame);
+    if(!notes) continue;
+    const key  = keyFn(frame);
+    const last = entries[entries.length - 1];
+    if(last && last._key === key){
+      last.endSec = frame.time + YT_INTERVAL_MS / 1000;
+    } else {
+      entries.push({startSec:frame.time, endSec:frame.time + YT_INTERVAL_MS/1000,
+                    notes, channel, _key:key});
+    }
+  }
+  return entries;
+}
+
+// ── Build all three MIDI files from the recorded timeline ─────
+function ytFinalizeMidi(){
+  const tl = YTA.timeline;
+
+  YTA.chordEntries = compressToEntries(tl,
+    f => (f.chordNotes||[]).join(','),
+    f => f.chordNotes || null,
+    0
+  );
+  YTA.bassEntries = compressToEntries(tl,
+    f => String(f.bassNote),
+    f => (f.bassNote != null) ? [f.bassNote] : null,
+    1
+  );
+  YTA.melodyEntries = compressToEntries(tl,
+    f => String(f.melodyNote),
+    f => (f.melodyNote != null) ? [f.melodyNote] : null,
+    2
+  );
+
+  const t = YTA.videoTitle;
+  YTA.chordMidi  = buildMidiFromEntries(YTA.chordEntries,  t + ' - Chords');
+  YTA.bassMidi   = buildMidiFromEntries(YTA.bassEntries,   t + ' - Bass');
+  YTA.melodyMidi = buildMidiFromEntries(YTA.melodyEntries, t + ' - Melody');
+}
+
+// ── Chord timeline bar render ─────────────────────────────────
+function ytRenderTimeline(){
+  const segsEl = document.getElementById('ytTlSegs');
+  segsEl.innerHTML = '';
+  if(!YTA.chordEntries.length) return;
+
+  const totalDur = YTA.chordEntries[YTA.chordEntries.length-1].endSec
+                 - YTA.chordEntries[0].startSec;
+  if(totalDur <= 0) return;
+
+  const colorMap = {};
+  let colorIdx   = 0;
+  for(const e of YTA.chordEntries){
+    const frame = YTA.timeline.find(f => f.time >= e.startSec && f.chordNotes);
+    const label = frame ? ytChordLabel(frame.rootPc, frame.intervals) : '?';
+    if(!colorMap[label]) colorMap[label] = TL_COLORS[colorIdx++ % TL_COLORS.length];
+    const pct = (e.endSec - e.startSec) / totalDur * 100;
+    const seg = document.createElement('div');
+    seg.className       = 'yt-tl-seg';
+    seg.style.width     = pct.toFixed(2) + '%';
+    seg.style.minWidth  = '1px';
+    seg.style.background= colorMap[label];
+    seg.textContent     = pct > 2.5 ? label : '';
+    seg.title           = label;
+    segsEl.appendChild(seg);
+  }
+  document.getElementById('ytTimelineBar').style.display = 'block';
+}
+
+// ── Single analysis frame ─────────────────────────────────────
+function ytAnalyzeFrame(){
+  if(!YTA.recording || !YTA.analyser) return;
+
+  const fftSize    = YTA.analyser.fftSize;
+  const sampleRate = YTA.audioCtx.sampleRate;
+  const freqData   = new Float32Array(fftSize / 2);
+  YTA.analyser.getFloatFrequencyData(freqData);
+
+  const time = YTA.player?.getCurrentTime?.() ?? 0;
+
+  // ── Chord: 150–3000 Hz chroma → SATB voicing ──────────────
+  const chordChroma = chromaFromFFT(freqData, sampleRate, fftSize, 150, 3000);
+  let chordNotes = null, rootPc = 0, intervals = [0,4,7];
+  if(chordChroma){
+    ({rootPc, intervals} = bestChordRootAndType(chordChroma, 0, 0));
+    const bassMidiHint   = dominantMidiNote(freqData, sampleRate, fftSize, 27, 300);
+    const melodyMidiHint = dominantMidiNote(freqData, sampleRate, fftSize, 800, 5000);
+    const voiced = voiceLeadChord(
+      rootPc, intervals,
+      bassMidiHint   != null ? bassMidiHint   % 12 : -1,
+      melodyMidiHint != null ? melodyMidiHint % 12 : -1,
+      YTA.prevVoicing
+    );
+    YTA.prevVoicing = voiced;
+    chordNotes = voiced;
+    // Live display
+    document.getElementById('ytChordDisplay').textContent = ytChordLabel(rootPc, intervals);
+    document.getElementById('ytChordSub').textContent     =
+      `Time ${time.toFixed(1)}s · ${YTA.timeline.length} frames`;
+  }
+
+  // ── Stem stems: monophonic peak-pick per band ──────────────
+  // Bass stem: 27–300 Hz (MIDI range 28–50 = E1–D3)
+  const rawBass = dominantMidiNote(freqData, sampleRate, fftSize, 27, 300);
+  const bassNote = (rawBass != null) ? Math.max(28, Math.min(50, rawBass)) : null;
+
+  // Melody stem: 300–5000 Hz
+  const rawMel   = dominantMidiNote(freqData, sampleRate, fftSize, 300, 5000);
+  const melodyNote = (rawMel != null) ? Math.max(48, Math.min(96, rawMel)) : null;
+
+  YTA.timeline.push({time, rootPc, intervals, chordNotes, bassNote, melodyNote});
+}
+
+// ── Start capture ─────────────────────────────────────────────
+async function ytStartCapture(){
+  try{
+    const stream = await navigator.mediaDevices.getDisplayMedia({audio:true, video:true});
+    if(!stream.getAudioTracks().length){
+      stream.getTracks().forEach(t => t.stop());
+      document.getElementById('ytStatus').textContent =
+        'No audio captured — share a tab and tick "Share tab audio".';
+      return;
+    }
+    // Discard the video track; we only need audio
+    stream.getVideoTracks().forEach(t => t.stop());
+
+    YTA.stream   = stream;
+    YTA.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    YTA.analyser = YTA.audioCtx.createAnalyser();
+    YTA.analyser.fftSize               = YT_FFT_SIZE;
+    YTA.analyser.smoothingTimeConstant = 0.65;
+    YTA.audioCtx.createMediaStreamSource(stream).connect(YTA.analyser);
+
+    YTA.timeline    = [];
+    YTA.prevVoicing = null;
+    YTA.recording   = true;
+
+    document.getElementById('ytCaptureBtn').disabled    = true;
+    document.getElementById('ytStopCaptureBtn').disabled= false;
+    document.getElementById('ytStatus').innerHTML =
+      '<span class="yt-rec-dot"></span>Recording — press Play on YouTube now.';
+    document.getElementById('ytSyncRow').style.display      = 'none';
+    document.getElementById('ytDlRow').style.display        = 'none';
+    document.getElementById('ytTimelineBar').style.display  = 'none';
+
+    YTA.frameTimer = setInterval(ytAnalyzeFrame, YT_INTERVAL_MS);
+    // Auto-stop when user revokes screen share
+    stream.addEventListener('inactive', ytStopCapture);
+  } catch(err){
+    if(err.name !== 'NotAllowedError')
+      document.getElementById('ytStatus').textContent = 'Capture error: ' + err.message;
+  }
+}
+
+// ── Stop capture & finalize ───────────────────────────────────
+function ytStopCapture(){
+  if(!YTA.recording) return;
+  YTA.recording = false;
+  clearInterval(YTA.frameTimer);
+  YTA.stream?.getTracks().forEach(t => t.stop());  YTA.stream = null;
+  YTA.audioCtx?.close().catch(()=>{});             YTA.audioCtx = null;
+
+  document.getElementById('ytCaptureBtn').disabled    = false;
+  document.getElementById('ytStopCaptureBtn').disabled= true;
+
+  if(!YTA.timeline.length){
+    document.getElementById('ytStatus').textContent = 'No audio captured.';
+    return;
+  }
+
+  YTA.videoTitle = YTA.player?.getVideoData?.()?.title || 'YouTube';
+  ytFinalizeMidi();
+  ytRenderTimeline();
+
+  document.getElementById('ytStatus').textContent =
+    `Done — ${YTA.timeline.length} frames · ${YTA.chordEntries.length} chord segments.`;
+  document.getElementById('ytSyncRow').style.display = 'flex';
+  document.getElementById('ytDlRow').style.display   = 'flex';
+}
+
+// ── Synced playback (MIDI chord + YouTube together) ───────────
+function ytStartSync(){
+  ytStopSync();
+  if(!YTA.chordMidi || !YTA.player) return;
+
+  const startSec = YTA.player.getCurrentTime?.() ?? 0;
+  YTA.midiPlayer = new MIDIPlayer(YTA.chordMidi);
+  YTA.midiPlayer.play(startSec);
+  YTA.player.seekTo(startSec, true);
+  YTA.player.playVideo();
+
+  const totalDur   = YTA.chordEntries.length
+    ? YTA.chordEntries[YTA.chordEntries.length-1].endSec : 0;
+  const startOffset= YTA.chordEntries[0]?.startSec ?? 0;
+
+  function syncTick(){
+    if(!YTA.midiPlayer?.playing){ YTA.syncRaf = null; return; }
+    const ytTime = YTA.player.getCurrentTime?.() ?? 0;
+
+    // Drift correction: if AudioContext clock drifts > 600ms resync
+    if(Math.abs(YTA.midiPlayer.currentSec() - ytTime) > 0.6){
+      YTA.midiPlayer.pause();
+      YTA.midiPlayer.play(ytTime);
+    }
+
+    // Chord display: find latest frame at or before current time
+    let frame = null;
+    for(const f of YTA.timeline){ if(f.time <= ytTime) frame = f; }
+    if(frame) document.getElementById('ytChordDisplay').textContent =
+      ytChordLabel(frame.rootPc, frame.intervals);
+
+    // Playhead
+    if(totalDur > startOffset){
+      const pct = Math.max(0, Math.min(100,
+        (ytTime - startOffset) / (totalDur - startOffset) * 100));
+      document.getElementById('ytPlayhead').style.left = pct + '%';
+    }
+    YTA.syncRaf = requestAnimationFrame(syncTick);
+  }
+  YTA.syncRaf = requestAnimationFrame(syncTick);
+}
+
+function ytStopSync(){
+  cancelAnimationFrame(YTA.syncRaf); YTA.syncRaf = null;
+  YTA.midiPlayer?.stop();            YTA.midiPlayer = null;
+  YTA.player?.pauseVideo?.();
+}
+
+// ── Load YouTube IFrame player ────────────────────────────────
+function ytLoadPlayer(videoId){
+  document.getElementById('ytPlayerEl').innerHTML = '';
+  document.getElementById('ytCaptureBtn').disabled = true;
+  document.getElementById('ytStatus').textContent  = 'Loading player…';
+
+  const create = () => {
+    YTA.player = new YT.Player('ytPlayerEl', {
+      videoId,
+      playerVars: {playsinline:1, rel:0},
+      events: { onReady: () => {
+        document.getElementById('ytCaptureBtn').disabled = false;
+        document.getElementById('ytStatus').textContent =
+          'Ready. Click "Capture & Analyze", share your YouTube tab with audio, then press Play.';
+      }},
+    });
+  };
+
+  if(window.YT && window.YT.Player){
+    create();
+  } else {
+    window.onYouTubeIframeAPIReady = create;
+    if(!document.getElementById('ytApiScript')){
+      const s    = document.createElement('script');
+      s.id       = 'ytApiScript';
+      s.src      = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(s);
+    }
+  }
+}
+
+function ytLoad(){
+  const url = document.getElementById('ytUrlInput').value.trim();
+  const vid = ytVideoId(url);
+  if(!vid){ document.getElementById('ytStatus').textContent = 'Invalid YouTube URL.'; return; }
+  ytLoadPlayer(vid);
+}
+
+// ── Download helper ───────────────────────────────────────────
+function ytDownload(midiObj, stem){
+  if(!midiObj) return;
+  const bytes = new MIDISerializer().serialize(midiObj);
+  triggerDownload(bytes, YTA.videoTitle + ' - ' + stem + '.mid');
+}
+
+// ── Show / hide YouTube workspace ────────────────────────────
+function showYtWorkspace(){
+  document.getElementById('landing').style.display   = 'none';
+  document.getElementById('workspace').classList.remove('visible');
+  document.getElementById('ytWorkspace').classList.add('visible');
+}
+
+function hideYtWorkspace(){
+  ytStopSync();
+  ytStopCapture();
+  document.getElementById('ytWorkspace').classList.remove('visible');
+  if(APP.files.length) document.getElementById('workspace').classList.add('visible');
+  else                 document.getElementById('landing').style.display = '';
+}
+
+
+// ─────────────────────────────────────────────────────────────
 // INIT
 // ─────────────────────────────────────────────────────────────
 
@@ -2344,6 +2863,19 @@ document.addEventListener('DOMContentLoaded',()=>{
     const e=APP.files[APP.selected];
     if(e&&e.histogram) refreshPiano(e.histogram,e.root,e.scaleIndex,e.noteFreqMap,APP.activeNotes);
   });
+
+  // ── YouTube mode wiring ──────────────────────────────────────
+  document.getElementById('ytModeBtn').addEventListener('click', showYtWorkspace);
+  document.getElementById('ytBackBtn').addEventListener('click', hideYtWorkspace);
+  document.getElementById('ytLoadBtn').addEventListener('click', ytLoad);
+  document.getElementById('ytUrlInput').addEventListener('keydown', e => { if(e.key==='Enter') ytLoad(); });
+  document.getElementById('ytCaptureBtn').addEventListener('click', ytStartCapture);
+  document.getElementById('ytStopCaptureBtn').addEventListener('click', ytStopCapture);
+  document.getElementById('ytSyncPlayBtn').addEventListener('click', ytStartSync);
+  document.getElementById('ytSyncStopBtn').addEventListener('click', ytStopSync);
+  document.getElementById('ytDlChordBtn').addEventListener('click', () => ytDownload(YTA.chordMidi, 'Chords'));
+  document.getElementById('ytDlBassBtn').addEventListener('click',  () => ytDownload(YTA.bassMidi,  'Bass'));
+  document.getElementById('ytDlMelodyBtn').addEventListener('click',() => ytDownload(YTA.melodyMidi,'Melody'));
 });
 </script>
 </body>
