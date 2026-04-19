@@ -2527,7 +2527,7 @@ function ytChordLabel(rootPc, intervals){
 // entries: [{startSec, endSec, notes:[midiNote…], channel}]
 function buildMidiFromEntries(entries, label){
   const absEvs = [];
-  const gap    = Math.round(YT_TPB * 0.08);
+  const gap    = Math.round(AUD_TPB * 0.08);
   for(const e of entries){
     const st = ytSecToTick(e.startSec);
     const et = ytSecToTick(e.endSec);
@@ -2552,7 +2552,7 @@ function buildMidiFromEntries(entries, label){
   }
   const lastTick = absEvs.length ? absEvs[absEvs.length-1]._tick : 0;
   track.push({delta: Math.max(0, lastTick - prev), kind:'meta', metaType:0x2F, data:[]});
-  return {format:0, numTracks:1, division:YT_TPB, tracks:[track]};
+  return {format:0, numTracks:1, division:AUD_TPB, tracks:[track]};
 }
 
 // ── Merge consecutive frames with identical key into spans ────
