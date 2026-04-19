@@ -2372,24 +2372,38 @@ const TL_COLORS = [
 ];
 
 const YTA = {
-  player:       null,   // YT.Player instance
-  audioCtx:     null,
-  analyser:     null,
-  stream:       null,
-  recording:    false,
-  timeline:     [],     // [{time, rootPc, intervals, chordNotes, bassNote, melodyNote}]
-  frameTimer:   null,
-  prevVoicing:  null,
-  chordEntries: [],
-  bassEntries:  [],
-  melodyEntries:[],
-  chordMidi:    null,
-  bassMidi:     null,
-  melodyMidi:   null,
-  midiPlayer:   null,
-  syncRaf:      null,
-  videoTitle:   'YouTube',
+  player:            null,   // YT.Player instance (null in external mode)
+  audioCtx:          null,
+  analyser:          null,
+  stream:            null,
+  recording:         false,
+  timeline:          [],     // [{time, rootPc, intervals, chordNotes, bassNote, melodyNote}]
+  frameTimer:        null,
+  prevVoicing:       null,
+  chordEntries:      [],
+  bassEntries:       [],
+  melodyEntries:     [],
+  chordMidi:         null,
+  bassMidi:          null,
+  melodyMidi:        null,
+  midiPlayer:        null,
+  syncRaf:           null,
+  videoTitle:        'YouTube',
+  videoId:           null,
+  externalMode:      false,  // true when video can't be embedded
+  externalWallStart: null,   // Date.now() when user marked playback start
 };
+
+// Returns the current playback position in seconds.
+// Embedded mode → YouTube IFrame API; external mode → wall-clock timer.
+function ytGetCurrentTime(){
+  if(YTA.externalMode){
+    return YTA.externalWallStart != null
+      ? (Date.now() - YTA.externalWallStart) / 1000
+      : 0;
+  }
+  return YTA.player?.getCurrentTime?.() ?? 0;
+}
 
 // ── Extract YouTube video ID from any YouTube URL ─────────────
 function ytVideoId(url){
@@ -2552,7 +2566,7 @@ function ytAnalyzeFrame(){
   const freqData   = new Float32Array(fftSize / 2);
   YTA.analyser.getFloatFrequencyData(freqData);
 
-  const time = YTA.player?.getCurrentTime?.() ?? 0;
+  const time = ytGetCurrentTime();
 
   // ── Chord: 150–3000 Hz chroma → SATB voicing ──────────────
   const chordChroma = chromaFromFFT(freqData, sampleRate, fftSize, 150, 3000);
@@ -2620,6 +2634,9 @@ async function ytStartCapture(){
     document.getElementById('ytTimelineBar').style.display  = 'none';
 
     YTA.frameTimer = setInterval(ytAnalyzeFrame, YT_INTERVAL_MS);
+    // Enable "Mark as playing" in external mode
+    const markBtn = document.getElementById('ytMarkPlayBtn');
+    if(markBtn){ markBtn.disabled = false; markBtn.textContent = '⏱ Mark as playing'; }
     // Auto-stop when user revokes screen share
     stream.addEventListener('inactive', ytStopCapture);
   } catch(err){
@@ -2659,11 +2676,13 @@ function ytStartSync(){
   ytStopSync();
   if(!YTA.chordMidi || !YTA.player) return;
 
-  const startSec = YTA.player.getCurrentTime?.() ?? 0;
+  const startSec = ytGetCurrentTime();
   YTA.midiPlayer = new MIDIPlayer(YTA.chordMidi);
   YTA.midiPlayer.play(startSec);
-  YTA.player.seekTo(startSec, true);
-  YTA.player.playVideo();
+  if(!YTA.externalMode){
+    YTA.player.seekTo(startSec, true);
+    YTA.player.playVideo();
+  }
 
   const totalDur   = YTA.chordEntries.length
     ? YTA.chordEntries[YTA.chordEntries.length-1].endSec : 0;
@@ -2671,7 +2690,7 @@ function ytStartSync(){
 
   function syncTick(){
     if(!YTA.midiPlayer?.playing){ YTA.syncRaf = null; return; }
-    const ytTime = YTA.player.getCurrentTime?.() ?? 0;
+    const ytTime = ytGetCurrentTime();
 
     // Drift correction: if AudioContext clock drifts > 600ms resync
     if(Math.abs(YTA.midiPlayer.currentSec() - ytTime) > 0.6){
@@ -2699,12 +2718,69 @@ function ytStartSync(){
 function ytStopSync(){
   cancelAnimationFrame(YTA.syncRaf); YTA.syncRaf = null;
   YTA.midiPlayer?.stop();            YTA.midiPlayer = null;
-  YTA.player?.pauseVideo?.();
+  if(!YTA.externalMode) YTA.player?.pauseVideo?.();
+}
+
+// ── Fallback: video can't be embedded — switch to external-tab mode ──
+function ytHandleEmbedError(videoId){
+  YTA.externalMode = true;
+  YTA.player       = null;
+
+  const wrap = document.getElementById('ytPlayerWrap');
+  wrap.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+                height:100%;gap:16px;color:var(--dim);text-align:center;padding:24px">
+      <div style="font-size:36px;opacity:.4">▶</div>
+      <div style="font-size:15px;color:var(--text);font-weight:600">This video can't be embedded</div>
+      <div style="font-size:13px;max-width:420px">
+        Open it in a YouTube tab instead, then come back here and click
+        <strong style="color:var(--accent)">Capture &amp; Analyze</strong>.
+      </div>
+      <a href="https://www.youtube.com/watch?v=${videoId}" target="_blank" rel="noopener"
+         style="padding:9px 20px;border-radius:8px;background:var(--accent);color:#fff;
+                font-weight:600;font-size:13px;text-decoration:none">
+        Open in YouTube ↗
+      </a>
+      <div style="font-size:12px;color:var(--dim);max-width:380px">
+        When capturing: share the YouTube tab and enable
+        <em>Share tab audio</em>. Press Play on YouTube, then click
+        <strong style="color:var(--text)">Mark as playing</strong> here to sync the timeline.
+      </div>
+    </div>`;
+
+  // Insert "Mark as playing" button next to Capture & Analyze
+  if(!document.getElementById('ytMarkPlayBtn')){
+    const btn = document.createElement('button');
+    btn.id        = 'ytMarkPlayBtn';
+    btn.className = 'btn-yt sec';
+    btn.textContent = '⏱ Mark as playing';
+    btn.disabled  = true;
+    btn.title     = 'Click exactly when you press Play on YouTube — sets the sync start time';
+    btn.addEventListener('click', () => {
+      YTA.externalWallStart = Date.now();
+      btn.textContent = '✓ Synced';
+      btn.disabled    = true;
+    });
+    document.getElementById('ytCaptureBtn').insertAdjacentElement('afterend', btn);
+  }
+
+  document.getElementById('ytCaptureBtn').disabled = false;
+  document.getElementById('ytStatus').textContent  =
+    'External mode — open the link above, then capture this tab\'s audio.';
 }
 
 // ── Load YouTube IFrame player ────────────────────────────────
 function ytLoadPlayer(videoId){
-  document.getElementById('ytPlayerEl').innerHTML = '';
+  YTA.videoId      = videoId;
+  YTA.externalMode = false;
+  YTA.externalWallStart = null;
+
+  // Reset player wrap to a plain container
+  const wrap = document.getElementById('ytPlayerWrap');
+  wrap.innerHTML = '<div id="ytPlayerEl"></div>';
+  // Remove external-mode mark button if it exists from a previous load
+  document.getElementById('ytMarkPlayBtn')?.remove();
+
   document.getElementById('ytCaptureBtn').disabled = true;
   document.getElementById('ytStatus').textContent  = 'Loading player…';
 
@@ -2712,11 +2788,22 @@ function ytLoadPlayer(videoId){
     YTA.player = new YT.Player('ytPlayerEl', {
       videoId,
       playerVars: {playsinline:1, rel:0},
-      events: { onReady: () => {
-        document.getElementById('ytCaptureBtn').disabled = false;
-        document.getElementById('ytStatus').textContent =
-          'Ready. Click "Capture & Analyze", share your YouTube tab with audio, then press Play.';
-      }},
+      events: {
+        onReady: () => {
+          document.getElementById('ytCaptureBtn').disabled = false;
+          document.getElementById('ytStatus').textContent  =
+            'Ready. Click "Capture & Analyze", share your YouTube tab with audio, then press Play.';
+        },
+        onError: (e) => {
+          // 101 / 150 = embedding disabled by video owner
+          if(e.data === 101 || e.data === 150 || e.data === 100){
+            ytHandleEmbedError(videoId);
+          } else {
+            document.getElementById('ytStatus').textContent =
+              'YouTube player error ' + e.data + '.';
+          }
+        },
+      },
     });
   };
 
