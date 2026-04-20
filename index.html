@@ -330,7 +330,13 @@
     }
     .mod-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
     .mod-row-label { flex: 1; color: var(--text); }
-    .mod-row-time  { color: var(--dim); font-size: 10px; white-space: nowrap; }
+    /* current-key label inside harmony bar, top-right */
+    .mod-cur-key {
+      position: absolute; top: 5px; right: 8px; z-index: 3;
+      font-size: 10px; font-weight: 700; color: rgba(255,255,255,.9);
+      text-shadow: 0 1px 3px rgba(0,0,0,.65); pointer-events: none;
+      letter-spacing: 0.3px;
+    }
 
     /* ── BUTTONS ── */
     .btn-download {
@@ -520,6 +526,7 @@
           <span id="modSensVal">3</span>
         </div>
         <div class="mod-timeline" id="modTimeline">
+          <div class="mod-cur-key" id="modCurKey"></div>
           <div class="mod-playhead hidden" id="modPlayhead"></div>
         </div>
         <div class="mod-segments-list" id="modList"></div>
@@ -1704,6 +1711,7 @@ const APP = {
   files:       [],   // FileEntry[]
   selected:    -1,
   player:      null,
+  audioEl:     null, // HTMLAudioElement for audio-derived entries
   paused:      false,
   pausedAt:    0,
   activeNotes: new Set(),
@@ -1799,6 +1807,7 @@ function showWorkspace(){
 
 function showLanding(){
   stopPlayer();
+  for(const e of APP.files) if(e._audioUrl) URL.revokeObjectURL(e._audioUrl);
   APP.files=[]; APP.selected=-1;
   document.getElementById('landing').style.display='';
   document.getElementById('workspace').classList.remove('visible');
@@ -1947,22 +1956,24 @@ function refreshModulations(entry){
     timeline.appendChild(ph);   // re-parent if needed
   }
 
-  // ── List below timeline
+  // ── List below timeline (swatch + label only)
   list.innerHTML = segs.map((seg, i) => {
-    const color    = segColor(seg.root, seg.scaleIndex);
-    const label    = `${NOTE_NAMES[seg.root]} ${SCALES[seg.scaleIndex].name}`;
-    const startSec = toSec(seg.startTick);
-    const endSec   = toSec(seg.endTick || lastTick);
-    const dur      = endSec - startSec;
+    const color = segColor(seg.root, seg.scaleIndex);
+    const label = `${NOTE_NAMES[seg.root]} ${SCALES[seg.scaleIndex].name}`;
     return `<div class="mod-row">
       <div class="mod-swatch" style="background:${color}"></div>
       <div class="mod-row-label">${i===0?'<b>':''}${label}${i===0?'</b>':''}</div>
-      <div class="mod-row-time">CC85=${seg.root} CC86=${seg.scaleIndex} · ${fmt(startSec)}–${fmt(endSec)} (${dur.toFixed(1)}s)</div>
     </div>`;
   }).join('');
 
-  // Store totalSec on the timeline so updateModPlayhead can read it without recomputing
-  timeline._totalSec = totalSec;
+  // Seed the current-key label with the first segment
+  const curKeyEl = document.getElementById('modCurKey');
+  if(curKeyEl) curKeyEl.textContent = `${NOTE_NAMES[segs[0].root]} ${SCALES[segs[0].scaleIndex].name}`;
+
+  // Cache for fast playhead lookups
+  timeline._totalSec   = totalSec;
+  timeline._segStarts  = segs.map(s => toSec(s.startTick));
+  timeline._segLabels  = segs.map(s => `${NOTE_NAMES[s.root]} ${SCALES[s.scaleIndex].name}`);
 }
 
 // Update the modulation playhead — called every animation frame during playback.
@@ -1977,6 +1988,15 @@ function updateModPlayhead(currentSec, totalSec){
   const frac = Math.max(0, Math.min(1, currentSec / dur));
   ph.style.left = (frac * 100).toFixed(3) + '%';
   ph.classList.remove('hidden');
+
+  // Update current-key label
+  const ss = timeline._segStarts, sl = timeline._segLabels;
+  if(ss && sl && ss.length){
+    let idx = 0;
+    for(let i = 1; i < ss.length; i++){ if(ss[i] <= currentSec) idx = i; }
+    const curKeyEl = document.getElementById('modCurKey');
+    if(curKeyEl) curKeyEl.textContent = sl[idx];
+  }
 }
 
 // Hide playhead when stopped / file changes
@@ -2138,6 +2158,7 @@ function resetPlaybackUI(entry){
 
 function stopPlayer(){
   if(APP.player){ APP.player.stop(); APP.player=null; }
+  if(APP.audioEl){ APP.audioEl.pause(); APP.audioEl.currentTime=0; APP.audioEl=null; }
   APP.paused=false; APP.pausedAt=0; APP.activeNotes=new Set();
   hideModPlayhead();
   const btn=document.getElementById('btnPlay');
@@ -2154,6 +2175,14 @@ function startPlayer(fromSec=0){
   const entry=APP.files[APP.selected];
   if(!entry||!entry.midi) return;
   if(APP.player) APP.player._cleanup();
+
+  // Play original audio alongside MIDI for audio-derived entries
+  if(entry._isAudio && entry._audioUrl){
+    if(APP.audioEl){ APP.audioEl.pause(); APP.audioEl=null; }
+    APP.audioEl=new Audio(entry._audioUrl);
+    APP.audioEl.currentTime=fromSec;
+    APP.audioEl.play().catch(()=>{});
+  }
 
   APP.player=new MIDIPlayer(entry.midi);
   APP.player.onProgress=(sec,dur)=>{
@@ -2188,6 +2217,7 @@ function onPlayPause(){
     APP.pausedAt=APP.player.pause();
     APP.paused=true;
     APP.player=null;
+    if(APP.audioEl){ APP.audioEl.pause(); }
     document.getElementById('btnPlay').textContent='▶';
     document.getElementById('btnPlay').title='Resume';
   }
@@ -2462,9 +2492,15 @@ function buildBeatAlignedMidi(timeline, bpm){
       for(const f of chromaFrames) for(let pc = 0; pc < 12; pc++) avg[pc] += f.chroma[pc];
       const maxC = Math.max(...avg);
       if(maxC > 0){
-        for(let pc = 0; pc < 12; pc++){
-          const vel = Math.round(avg[pc] / maxC * 100);
-          if(vel < 12) continue;
+        // Keep only the top 5 pitch classes that are at least 25% of the strongest —
+        // this prevents chromatic noise from polluting the harmony analysis.
+        const ranked = avg
+          .map((v, pc) => ({ pc, v }))
+          .filter(x => x.v >= maxC * 0.25)
+          .sort((a, b) => b.v - a.v)
+          .slice(0, 5);
+        for(const { pc, v } of ranked){
+          const vel = Math.round(v / maxC * 100);
           absEvs.push({_tick:beatTick, kind:'noteOn',  channel:0, note:60+pc, velocity:vel});
           absEvs.push({_tick:offTick,  kind:'noteOff', channel:0, note:60+pc, velocity:0});
         }
@@ -2531,8 +2567,9 @@ async function analyzeAudioBuffer(audioBuffer, onProgress){
     }
     prevSpec = spec.slice(0, fluxHiBin + 1);
 
-    // Extract chroma only from harmonic (non-transient) frames
-    const chroma = isTransient ? null : audChromaFromFFT(spec, sampleRate, fftSize, 200, 2800);
+    // Extract chroma only from harmonic (non-transient) frames.
+    // 300–2000 Hz: above kick/bass fundamentals, below cymbal splash.
+    const chroma = isTransient ? null : audChromaFromFFT(spec, sampleRate, fftSize, 300, 2000);
     timeline.push({ time, chroma });
 
     if(frame % 100 === 0){
@@ -2577,6 +2614,7 @@ async function loadAudioFile(file){
       midi: rawMidi, notes: null, noteFreqMap: null,
       histogram: null, candidates: null, root: 0, scaleIndex: 0,
       segments: null, error: null, _bpm: bpm, _isAudio: true,
+      _audioUrl: URL.createObjectURL(file),
     };
     entry.notes = buildNoteList(rawMidi);
     const freqMap = new Array(128).fill(0);
