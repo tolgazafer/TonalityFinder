@@ -490,6 +490,53 @@
       transition: background 0.18s;
     }
     .btn-outline-yt:hover { background: rgba(123,104,238,.22); }
+
+    /* ── Integrated audio+MIDI player ── */
+    .aud-player {
+      background: var(--s1); border: 1px solid var(--border); border-radius: 12px;
+      padding: 18px 20px; margin-bottom: 20px;
+    }
+    .aud-player-top {
+      display: flex; align-items: center; gap: 16px; margin-bottom: 14px;
+    }
+    .aud-play-btn {
+      width: 52px; height: 52px; border-radius: 50%; border: none; cursor: pointer;
+      background: var(--accent); color: #fff; font-size: 22px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: background .18s; line-height: 1;
+    }
+    .aud-play-btn:hover { background: #6a56d8; }
+    .aud-seek-wrap {
+      flex: 1; display: flex; align-items: center; gap: 10px;
+    }
+    .aud-time { font-size: 12px; color: var(--dim); white-space: nowrap; min-width: 36px; }
+    .aud-seek {
+      flex: 1; -webkit-appearance: none; appearance: none;
+      height: 4px; border-radius: 2px; background: var(--border); outline: none; cursor: pointer;
+    }
+    .aud-seek::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+      background: var(--accent); cursor: pointer; border: none;
+    }
+    .aud-track-row {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+    }
+    .aud-track-row:last-child { margin-bottom: 0; }
+    .aud-track-label { font-size: 12px; color: var(--dim); width: 52px; flex-shrink: 0; }
+    .aud-mute-btn {
+      width: 28px; height: 22px; border-radius: 5px; border: 1px solid var(--border);
+      background: transparent; color: var(--dim); font-size: 10px; font-weight: 700;
+      cursor: pointer; font-family: inherit; flex-shrink: 0; transition: background .15s, color .15s;
+    }
+    .aud-mute-btn.muted { background: var(--red); color: #fff; border-color: var(--red); }
+    .aud-vol {
+      flex: 1; -webkit-appearance: none; appearance: none;
+      height: 3px; border-radius: 2px; background: var(--border); outline: none; cursor: pointer;
+    }
+    .aud-vol::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
+      background: var(--dim); cursor: pointer; border: none;
+    }
   </style>
 </head>
 <body>
@@ -652,26 +699,38 @@
 
     <!-- Results (shown after analysis) -->
     <div id="audResults" style="display:none">
+
+      <!-- Integrated player -->
+      <div class="aud-player">
+        <div class="aud-player-top">
+          <button class="aud-play-btn" id="audPlayBtn" onclick="audTogglePlay()">▶</button>
+          <div class="aud-seek-wrap">
+            <span class="aud-time" id="audTimeCur">0:00</span>
+            <input type="range" class="aud-seek" id="audSeek" min="0" max="100" step="0.01" value="0"
+                   oninput="audOnSeek(this.value)" onmousedown="audSeekStart()" onmouseup="audSeekEnd(this.value)">
+            <span class="aud-time" id="audTimeTot">0:00</span>
+          </div>
+        </div>
+        <div class="aud-track-row">
+          <span class="aud-track-label">Audio</span>
+          <button class="aud-mute-btn" id="audAudioMuteBtn" onclick="audToggleMute('audio')">M</button>
+          <input type="range" class="aud-vol" id="audAudioVol" min="0" max="100" value="80"
+                 oninput="audSetVol('audio', this.value)">
+        </div>
+        <div class="aud-track-row">
+          <span class="aud-track-label">Chords</span>
+          <button class="aud-mute-btn" id="audMidiMuteBtn" onclick="audToggleMute('midi')">M</button>
+          <input type="range" class="aud-vol" id="audMidiVol" min="0" max="100" value="70"
+                 oninput="audSetVol('midi', this.value)">
+        </div>
+      </div>
+
+      <!-- Chord display + timeline -->
       <div class="yt-chord-display" id="ytChordDisplay"></div>
       <div class="yt-chord-sub"    id="ytChordSub"></div>
-
       <div class="yt-timeline-bar" id="ytTimelineBar">
         <div class="yt-tl-segs" id="ytTlSegs"></div>
         <div class="yt-playhead" id="ytPlayhead"></div>
-      </div>
-
-      <!-- Optional YouTube sync -->
-      <div class="aud-yt-section">
-        <div class="aud-yt-label">Optional — paste YouTube URL for synced playback</div>
-        <div class="aud-yt-row">
-          <input type="text" id="ytUrlInput" placeholder="https://youtube.com/watch?v=…" autocomplete="off" spellcheck="false">
-          <button class="btn-yt sec" id="ytLoadBtn">Load Player</button>
-        </div>
-      </div>
-      <div class="yt-player-wrap" id="ytPlayerWrap" style="display:none"><div id="ytPlayerEl"></div></div>
-      <div class="yt-row" id="ytSyncRow" style="display:none">
-        <button class="btn-yt green" id="ytSyncPlayBtn">▶ Play Synced</button>
-        <button class="btn-yt sec"   id="ytSyncStopBtn">■ Stop</button>
       </div>
 
       <!-- Downloads -->
@@ -1717,8 +1776,15 @@ class MIDIPlayer {
     this._nodes=[];
     this._raf=null;
     this._endTimer=null;
-    this.onProgress=null; // (currentSec, totalSec)
+    this._master=null;
+    this._gainValue=1.0;
+    this.onProgress=null;
     this.onEnd=null;
+  }
+
+  setGain(v){
+    this._gainValue=Math.max(0,Math.min(2,v));
+    if(this._master) this._master.gain.value=0.55*this._gainValue;
   }
 
   _build(){
@@ -1738,7 +1804,8 @@ class MIDIPlayer {
 
     const comp=this.ctx.createDynamicsCompressor();
     comp.threshold.value=-18; comp.connect(this.ctx.destination);
-    const master=this.ctx.createGain(); master.gain.value=0.55; master.connect(comp);
+    const master=this.ctx.createGain(); master.gain.value=0.55*this._gainValue; master.connect(comp);
+    this._master=master;
 
     const now=this.ctx.currentTime;
     this._ctxStart=now; this._offset=fromSec; this.playing=true;
@@ -2458,6 +2525,7 @@ const YTA = {
   melodyMidi:   null,
   midiPlayer:   null,
   syncRaf:      null,
+  audioEl:      null,   // HTMLAudioElement for integrated playback
   audioTitle:   'Audio',
   videoId:      null,
   externalMode: false,
@@ -2552,6 +2620,51 @@ function buildMidiFromEntries(entries, label){
   }
   const lastTick = absEvs.length ? absEvs[absEvs.length-1]._tick : 0;
   track.push({delta: Math.max(0, lastTick - prev), kind:'meta', metaType:0x2F, data:[]});
+  return {format:0, numTracks:1, division:AUD_TPB, tracks:[track]};
+}
+
+// ── Build a raw MIDI from audio FFT timeline ──────────────────
+// Produces a Format-0 MIDI at AUD_BPM/AUD_TPB whose note events
+// represent the detected harmonic content per frame.  This is
+// fed into the existing key/scale/chord detection pipeline so
+// the output chord MIDI uses exactly the same algorithm as MIDI
+// file analysis (modulations, voice-leading, CC85/86 injection).
+function buildRawMidiFromTimeline(timeline){
+  const hopTicks = Math.max(1, audSecToTick(AUD_HOP_MS / 1000));
+  const absEvs   = [];
+
+  for(const frame of timeline){
+    if(!frame.chordNotes) continue;
+    const st = audSecToTick(frame.time);
+    const et = st + hopTicks - 1;
+
+    // 4-voice chord (SATB) on ch 0 — drives chord detection
+    for(const note of frame.chordNotes){
+      const n = Math.max(0, Math.min(127, note));
+      absEvs.push({_tick:st, kind:'noteOn',  channel:0, note:n, velocity:64});
+      absEvs.push({_tick:et, kind:'noteOff', channel:0, note:n, velocity:0 });
+    }
+    // Bass note on ch 1 — adds low-register pitch-class weight
+    if(frame.bassNote != null){
+      const n = Math.max(0, Math.min(127, frame.bassNote));
+      absEvs.push({_tick:st, kind:'noteOn',  channel:1, note:n, velocity:72});
+      absEvs.push({_tick:et, kind:'noteOff', channel:1, note:n, velocity:0 });
+    }
+  }
+
+  absEvs.sort((a, b) => a._tick - b._tick);
+  const track = [
+    {delta:0, kind:'meta', metaType:0x51, data:[0x07,0xA1,0x20]}, // 120 BPM
+    {delta:0, kind:'meta', metaType:0x58, data:[4,2,24,8]},       // 4/4
+  ];
+  let prev = 0;
+  for(const ev of absEvs){
+    const {_tick, ...rest} = ev;
+    track.push({...rest, delta:Math.max(0, _tick - prev)});
+    prev = _tick;
+  }
+  const lastTick = absEvs.length ? absEvs[absEvs.length-1]._tick : 0;
+  track.push({delta:Math.max(0, lastTick-prev), kind:'meta', metaType:0x2F, data:[]});
   return {format:0, numTracks:1, division:AUD_TPB, tracks:[track]};
 }
 
@@ -2749,6 +2862,7 @@ async function analyzeAudioBuffer(audioBuffer, onProgress){
 // ── Load audio file, analyze, build MIDIs, update UI ─────────
 async function loadAndAnalyze(file){
   // Reset state
+  audStop();
   ytStopSync();
   YTA.timeline = []; YTA.prevVoicing = null;
   YTA.chordMidi = YTA.bassMidi = YTA.melodyMidi = null;
@@ -2786,29 +2900,186 @@ async function loadAndAnalyze(file){
         `Analyzing… ${(pct * 100).toFixed(0)}%  (${(pct * dur).toFixed(0)}s / ${fmt(dur)})`;
     });
 
-    // Build MIDIs
+    // Build MIDIs via harmony pipeline
     YTA.audioTitle = file.name.replace(/\.[^.]+$/, '');
-    ytFinalizeMidi();
+    document.getElementById('audProgressLabel').textContent = 'Building chord MIDI…';
+
+    const rawMidi = buildRawMidiFromTimeline(YTA.timeline);
+    const notes   = buildNoteList(rawMidi);
+    const hist    = buildWeightedHistogram(notes, rawMidi, APP.weights);
+    const cands   = detectBest(hist);
+    const segs    = detectModulations(notes, rawMidi, APP.weights, APP.modWindow || 4, APP.modSens || 3);
+    if(segs.length === 1 && cands.length){
+      segs[0].root = cands[0].root; segs[0].scaleIndex = cands[0].scaleIndex;
+    }
+    YTA.chordMidi = buildChordOnlyMidi(rawMidi, segs, notes, YTA.audioTitle);
+
+    YTA.chordEntries  = compressToEntries(YTA.timeline, f=>(f.chordNotes||[]).join(','), f=>f.chordNotes||null, 0);
+    YTA.bassEntries   = compressToEntries(YTA.timeline, f=>String(f.bassNote),   f=>f.bassNote!=null?[f.bassNote]:null, 1);
+    YTA.melodyEntries = compressToEntries(YTA.timeline, f=>String(f.melodyNote), f=>f.melodyNote!=null?[f.melodyNote]:null, 2);
+    YTA.bassMidi   = buildMidiFromEntries(YTA.bassEntries,   YTA.audioTitle + ' - Bass');
+    YTA.melodyMidi = buildMidiFromEntries(YTA.melodyEntries, YTA.audioTitle + ' - Melody');
+
+    // Prepare audio element for integrated playback
+    if(YTA.audioEl){ YTA.audioEl.pause(); URL.revokeObjectURL(YTA.audioEl.src); }
+    YTA.audioEl = new Audio(URL.createObjectURL(file));
+    YTA.audioEl.volume = 0.8;
+    YTA.audioEl.addEventListener('ended', () => audStop());
+
+    // Seek slider range
+    document.getElementById('audSeek').max = dur.toFixed(2);
+    document.getElementById('audTimeTot').textContent = fmt(dur);
+    document.getElementById('audTimeCur').textContent = '0:00';
+    document.getElementById('audSeek').value = 0;
+    document.getElementById('audPlayBtn').textContent = '▶';
+
     ytRenderTimeline();
 
     // Show results
     document.getElementById('audProgressWrap').style.display = 'none';
     document.getElementById('audResults').style.display      = 'block';
 
-    // Show first chord label and enable playback/downloads
+    // Show first chord label
     const first = YTA.timeline.find(f => f.chordNotes);
     if(first){
       document.getElementById('ytChordDisplay').textContent = ytChordLabel(first.rootPc, first.intervals);
       document.getElementById('ytChordSub').textContent     =
         `${YTA.chordEntries.length} chord segments · ${fmt(dur)} total`;
     }
-    // Play Synced is always available (MIDI preview even without YouTube)
-    document.getElementById('ytSyncRow').style.display = 'flex';
 
   } catch(err){
     document.getElementById('audProgressWrap').style.display = 'none';
     document.getElementById('audFileInfo').innerHTML +=
       ` <span style="color:var(--red);font-size:12px">Error: ${err.message}</span>`;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// INTEGRATED AUDIO + MIDI PLAYER
+// ─────────────────────────────────────────────────────────────
+
+const AUD_PLAYER = { seeking: false, rafId: null, audioMuted: false, midiMuted: false };
+
+function audFmt(s){ return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`; }
+
+function audTogglePlay(){
+  if(!YTA.audioEl || !YTA.chordMidi) return;
+  if(YTA.audioEl.paused){
+    audPlay();
+  } else {
+    audPause();
+  }
+}
+
+function audPlay(){
+  if(!YTA.audioEl || !YTA.chordMidi) return;
+  const t = YTA.audioEl.currentTime;
+  YTA.audioEl.play().catch(()=>{});
+  if(!YTA.midiPlayer || !YTA.midiPlayer.playing){
+    YTA.midiPlayer = new MIDIPlayer(YTA.chordMidi);
+    YTA.midiPlayer.setGain(AUD_PLAYER.midiMuted ? 0 : document.getElementById('audMidiVol').value / 100);
+    YTA.midiPlayer.play(t);
+  }
+  document.getElementById('audPlayBtn').textContent = '⏸';
+  cancelAnimationFrame(AUD_PLAYER.rafId);
+  AUD_PLAYER.rafId = requestAnimationFrame(audTick);
+}
+
+function audPause(){
+  YTA.audioEl?.pause();
+  YTA.midiPlayer?.stop(); YTA.midiPlayer = null;
+  document.getElementById('audPlayBtn').textContent = '▶';
+  cancelAnimationFrame(AUD_PLAYER.rafId);
+}
+
+function audStop(){
+  audPause();
+  if(YTA.audioEl) YTA.audioEl.currentTime = 0;
+  document.getElementById('audSeek').value = 0;
+  document.getElementById('audTimeCur').textContent = '0:00';
+  document.getElementById('ytPlayhead').style.left = '0%';
+}
+
+function audSeekStart(){ AUD_PLAYER.seeking = true; }
+
+function audOnSeek(val){
+  if(!YTA.audioEl) return;
+  document.getElementById('audTimeCur').textContent = audFmt(Number(val));
+}
+
+function audSeekEnd(val){
+  AUD_PLAYER.seeking = false;
+  const t = Number(val);
+  if(!YTA.audioEl) return;
+  YTA.audioEl.currentTime = t;
+  if(YTA.midiPlayer && YTA.midiPlayer.playing){
+    YTA.midiPlayer.stop(); YTA.midiPlayer = null;
+    YTA.midiPlayer = new MIDIPlayer(YTA.chordMidi);
+    YTA.midiPlayer.setGain(AUD_PLAYER.midiMuted ? 0 : document.getElementById('audMidiVol').value / 100);
+    YTA.midiPlayer.play(t);
+  }
+}
+
+function audTick(){
+  if(!YTA.audioEl) return;
+  const t   = YTA.audioEl.currentTime;
+  const dur = YTA.audioEl.duration || 1;
+
+  // Sync MIDI drift
+  if(YTA.midiPlayer?.playing){
+    const mSec = YTA.midiPlayer.currentSec();
+    if(Math.abs(mSec - t) > 0.5){
+      YTA.midiPlayer.stop(); YTA.midiPlayer = null;
+      YTA.midiPlayer = new MIDIPlayer(YTA.chordMidi);
+      YTA.midiPlayer.setGain(AUD_PLAYER.midiMuted ? 0 : document.getElementById('audMidiVol').value / 100);
+      YTA.midiPlayer.play(t);
+    }
+  }
+
+  // Update seek bar + time
+  if(!AUD_PLAYER.seeking){
+    document.getElementById('audSeek').value = t;
+    document.getElementById('audTimeCur').textContent = audFmt(t);
+  }
+
+  // Playhead on timeline
+  const startOff = YTA.chordEntries[0]?.startSec ?? 0;
+  const endOff   = YTA.chordEntries.length ? YTA.chordEntries[YTA.chordEntries.length-1].endSec : dur;
+  if(endOff > startOff){
+    const pct = Math.max(0, Math.min(100, (t - startOff) / (endOff - startOff) * 100));
+    document.getElementById('ytPlayhead').style.left = pct + '%';
+  }
+
+  // Chord label
+  let frame = null;
+  for(const f of YTA.timeline){ if(f.time <= t) frame = f; }
+  if(frame) document.getElementById('ytChordDisplay').textContent = ytChordLabel(frame.rootPc, frame.intervals);
+
+  if(!YTA.audioEl.paused){
+    AUD_PLAYER.rafId = requestAnimationFrame(audTick);
+  } else {
+    document.getElementById('audPlayBtn').textContent = '▶';
+  }
+}
+
+function audToggleMute(track){
+  if(track === 'audio'){
+    AUD_PLAYER.audioMuted = !AUD_PLAYER.audioMuted;
+    if(YTA.audioEl) YTA.audioEl.volume = AUD_PLAYER.audioMuted ? 0 : document.getElementById('audAudioVol').value / 100;
+    document.getElementById('audAudioMuteBtn').classList.toggle('muted', AUD_PLAYER.audioMuted);
+  } else {
+    AUD_PLAYER.midiMuted = !AUD_PLAYER.midiMuted;
+    YTA.midiPlayer?.setGain(AUD_PLAYER.midiMuted ? 0 : document.getElementById('audMidiVol').value / 100);
+    document.getElementById('audMidiMuteBtn').classList.toggle('muted', AUD_PLAYER.midiMuted);
+  }
+}
+
+function audSetVol(track, val){
+  const v = Number(val) / 100;
+  if(track === 'audio'){
+    if(YTA.audioEl && !AUD_PLAYER.audioMuted) YTA.audioEl.volume = v;
+  } else {
+    if(!AUD_PLAYER.midiMuted) YTA.midiPlayer?.setGain(v);
   }
 }
 
@@ -2914,15 +3185,14 @@ function ytLoadPlayer(videoId){
         onReady: () => {
           document.getElementById('ytPlayerWrap').style.display = 'block';
           // Show sync controls only if analysis is already done
-          if(YTA.chordMidi) document.getElementById('ytSyncRow').style.display = 'flex';
+          // YouTube player loaded — no extra action needed; audio player is always visible
         },
         onError: (e) => {
           // 101 / 150 = embedding disabled by video owner
           if(e.data === 101 || e.data === 150 || e.data === 100){
             ytHandleEmbedError(videoId);
           } else {
-            document.getElementById('ytStatus').textContent =
-              'YouTube player error ' + e.data + '.';
+            console.warn('YouTube player error', e.data);
           }
         },
       },
@@ -2943,9 +3213,9 @@ function ytLoadPlayer(videoId){
 }
 
 function ytLoad(){
-  const url = document.getElementById('ytUrlInput').value.trim();
+  const url = document.getElementById('ytUrlInput')?.value.trim() ?? '';
   const vid = ytVideoId(url);
-  if(!vid){ document.getElementById('ytStatus').textContent = 'Invalid YouTube URL.'; return; }
+  if(!vid){ console.warn('Invalid YouTube URL'); return; }
   ytLoadPlayer(vid);
 }
 
@@ -2965,6 +3235,7 @@ function showYtWorkspace(){
 
 function hideYtWorkspace(){
   ytStopSync();
+  audStop();
   document.getElementById('ytWorkspace').classList.remove('visible');
   if(APP.files.length) document.getElementById('workspace').classList.add('visible');
   else                 document.getElementById('landing').style.display = '';
@@ -3095,13 +3366,11 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(file) loadAndAnalyze(file);
   });
 
-  // Optional YouTube player
-  document.getElementById('ytLoadBtn').addEventListener('click', ytLoad);
-  document.getElementById('ytUrlInput').addEventListener('keydown', e => { if(e.key==='Enter') ytLoad(); });
+  // Optional YouTube player (elements only present when YouTube section is visible)
+  document.getElementById('ytLoadBtn')?.addEventListener('click', ytLoad);
+  document.getElementById('ytUrlInput')?.addEventListener('keydown', e => { if(e.key==='Enter') ytLoad(); });
 
-  // Playback & download
-  document.getElementById('ytSyncPlayBtn').addEventListener('click', ytStartSync);
-  document.getElementById('ytSyncStopBtn').addEventListener('click', ytStopSync);
+  // Downloads
   document.getElementById('ytDlChordBtn').addEventListener('click', () => ytDownload(YTA.chordMidi,  'Chords'));
   document.getElementById('ytDlBassBtn').addEventListener('click',  () => ytDownload(YTA.bassMidi,   'Bass'));
   document.getElementById('ytDlMelodyBtn').addEventListener('click',() => ytDownload(YTA.melodyMidi, 'Melody'));
