@@ -2900,21 +2900,27 @@ async function loadAndAnalyze(file){
         `Analyzing… ${(pct * 100).toFixed(0)}%  (${(pct * dur).toFixed(0)}s / ${fmt(dur)})`;
     });
 
-    // Build MIDIs via harmony pipeline
+    // Build chord MIDI through the exact same pipeline as MIDI file analysis.
+    // Step 1: build raw MIDI from FFT timeline (pitch-class representation of audio).
+    // Step 2: run analyzeEntry (histogram → key → modulations), exactly like a dropped MIDI file.
+    // Step 3: buildChordOnlyMidi via entrySegments — same as downloadChord().
     YTA.audioTitle = file.name.replace(/\.[^.]+$/, '');
     document.getElementById('audProgressLabel').textContent = 'Building chord MIDI…';
 
     const rawMidi = buildRawMidiFromTimeline(YTA.timeline);
-    const notes   = buildNoteList(rawMidi);
-    const hist    = buildWeightedHistogram(notes, rawMidi, APP.weights);
-    const cands   = detectBest(hist);
-    // Use wider windows and max resistance to change for noisy audio source
-    const segs    = detectModulations(notes, rawMidi, APP.weights, 8, 1);
-    if(segs.length === 1 && cands.length){
-      segs[0].root = cands[0].root; segs[0].scaleIndex = cands[0].scaleIndex;
-    }
-    YTA.chordMidi = buildChordOnlyMidi(rawMidi, segs, notes, YTA.audioTitle);
 
+    // Mirror analyzeEntry() exactly
+    const audEntry = {
+      name: YTA.audioTitle, midi: rawMidi, notes: null,
+      histogram: null, candidates: null, root: 0, scaleIndex: 0, segments: null, error: null,
+    };
+    audEntry.notes = buildNoteList(rawMidi);
+    analyzeEntry(audEntry);           // sets histogram, candidates, root, scaleIndex, segments
+
+    const segs = entrySegments(audEntry);
+    YTA.chordMidi = buildChordOnlyMidi(rawMidi, segs, audEntry.notes, YTA.audioTitle);
+
+    // Bass and melody MIDIs remain timeline-derived (raw FFT, lighter processing)
     YTA.chordEntries  = compressToEntries(YTA.timeline, f=>(f.chordNotes||[]).join(','), f=>f.chordNotes||null, 0);
     YTA.bassEntries   = compressToEntries(YTA.timeline, f=>String(f.bassNote),   f=>f.bassNote!=null?[f.bassNote]:null, 1);
     YTA.melodyEntries = compressToEntries(YTA.timeline, f=>String(f.melodyNote), f=>f.melodyNote!=null?[f.melodyNote]:null, 2);
