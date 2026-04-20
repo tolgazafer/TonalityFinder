@@ -372,6 +372,28 @@
 
     .hidden { display: none !important; }
     .mt8 { margin-top: 8px; }
+
+    /* ── AUDIO ANALYSIS MODAL ── */
+    .aud-modal {
+      position: fixed; inset: 0; background: rgba(0,0,0,.72);
+      display: flex; align-items: center; justify-content: center; z-index: 200;
+    }
+    .aud-modal-box {
+      background: var(--s1); border: 1px solid var(--border); border-radius: 14px;
+      padding: 28px 32px; width: 320px; text-align: center;
+    }
+    .aud-modal-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+    .aud-modal-bar {
+      height: 7px; background: var(--s2); border-radius: 4px; overflow: hidden; margin-bottom: 10px;
+    }
+    .aud-modal-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--green));
+      transition: width .18s ease;
+    }
+    .aud-modal-label { font-size: 12px; color: var(--dim); }
+    /* Audio badge in file list */
+    .badge-aud { background: var(--green); color: #000; }
   </style>
 </head>
 <body>
@@ -383,18 +405,29 @@
   </div>
 </header>
 
+<!-- Audio analysis progress modal -->
+<div class="aud-modal hidden" id="audModal">
+  <div class="aud-modal-box">
+    <div class="aud-modal-title" id="audModalTitle">Analyzing audio…</div>
+    <div class="aud-modal-bar"><div class="aud-modal-fill" id="audModalFill"></div></div>
+    <div class="aud-modal-label" id="audModalLabel">Loading…</div>
+  </div>
+</div>
+
 <!-- LANDING -->
 <div id="landing">
   <div class="drop-zone" id="dropZone">
     <div class="dz-icon">🎵</div>
-    <div class="dz-title">Drop MIDI files or a folder here</div>
-    <div class="dz-hint">Supports single files, multiple files, and entire folders</div>
+    <div class="dz-title">Drop MIDI or audio files here</div>
+    <div class="dz-hint">MIDI: .mid / .midi &nbsp;·&nbsp; Audio: .mp3 / .wav / .flac / .aac / .ogg / .m4a</div>
     <div class="dz-btns">
-      <button class="btn-outline" onclick="document.getElementById('fileInput').click()">Select Files</button>
-      <button class="btn-outline" onclick="document.getElementById('folderInput').click()">Select Folder</button>
+      <button class="btn-outline" onclick="document.getElementById('fileInput').click()">MIDI Files</button>
+      <button class="btn-outline" onclick="document.getElementById('folderInput').click()">MIDI Folder</button>
+      <button class="btn-outline" onclick="document.getElementById('audioInput').click()">Audio File</button>
     </div>
     <input type="file" id="fileInput"   multiple accept=".mid,.midi" style="display:none">
     <input type="file" id="folderInput" webkitdirectory               style="display:none">
+    <input type="file" id="audioInput"  accept="audio/*"             style="display:none">
   </div>
 </div>
 
@@ -1786,7 +1819,9 @@ function renderFileList(){
     const noteCount=entry.notes?entry.notes.filter(n=>n.channel!==9).length:0;
     const badge=entry.error
       ?'<span class="badge badge-err">err</span>'
-      :'<span class="badge badge-ok">ok</span>';
+      :entry._isAudio
+        ?'<span class="badge badge-aud">aud</span>'
+        :'<span class="badge badge-ok">ok</span>';
 
     div.innerHTML=`
       <div class="fi-name" title="${entry.name}">${entry.name}</div>
@@ -1820,9 +1855,13 @@ function renderAnalysis(entry){
 
   if(entry.midi){
     const noteCount=entry.notes?entry.notes.filter(n=>n.channel!==9).length:0;
-    const tracksWithNotes=entry.midi.tracks.filter(t=>t.some(e=>e.kind==='noteOn')).length;
-    document.getElementById('panelInfo').textContent=
-      `Format ${entry.midi.format} · ${entry.midi.numTracks} track${entry.midi.numTracks!==1?'s':''} · ${noteCount.toLocaleString()} note events`;
+    if(entry._isAudio){
+      document.getElementById('panelInfo').textContent=
+        `Audio → MIDI · ${entry._bpm} BPM · ${noteCount.toLocaleString()} note events`;
+    } else {
+      document.getElementById('panelInfo').textContent=
+        `Format ${entry.midi.format} · ${entry.midi.numTracks} track${entry.midi.numTracks!==1?'s':''} · ${noteCount.toLocaleString()} note events`;
+    }
   }
 
   const err=document.getElementById('panelErr');
@@ -2271,14 +2310,291 @@ function initDropdowns(){
 async function handleDrop(e){
   e.preventDefault();
   document.getElementById('dropZone').classList.remove('drag-over');
-  const files=[];
+  const midiFiles=[], audioFiles=[];
   for(const item of e.dataTransfer.items){
     if(item.kind!=='file') continue;
     const entry=item.webkitGetAsEntry?item.webkitGetAsEntry():null;
-    if(entry&&entry.isDirectory) await readFolderEntry(entry,files);
-    else { const f=item.getAsFile(); if(f&&/\.(mid|midi)$/i.test(f.name)) files.push(f); }
+    if(entry&&entry.isDirectory) await readFolderEntry(entry,midiFiles);
+    else {
+      const f=item.getAsFile();
+      if(!f) continue;
+      if(/\.(mid|midi)$/i.test(f.name)) midiFiles.push(f);
+      else if(/\.(mp3|wav|flac|aac|ogg|m4a|opus)$/i.test(f.name)) audioFiles.push(f);
+    }
   }
-  if(files.length) loadFiles(files);
+  if(midiFiles.length) loadFiles(midiFiles);
+  for(const f of audioFiles) await loadAudioFile(f);
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// AUDIO → MIDI CONVERSION
+// ─────────────────────────────────────────────────────────────
+
+const AUD_FFT_SIZE    = 4096;
+const AUD_HOP_MS      = 100;    // ms between FFT frames
+const AUD_TPB         = 480;    // ticks per beat in generated MIDI
+const AUD_FLUX_THRESH = 6.0;    // dB avg-flux above which a frame is flagged as transient
+
+// Progress modal helpers
+function showAudModal(label, pct){
+  document.getElementById('audModal').classList.remove('hidden');
+  document.getElementById('audModalLabel').textContent = label;
+  document.getElementById('audModalFill').style.width = (pct * 100).toFixed(1) + '%';
+}
+function hideAudModal(){ document.getElementById('audModal').classList.add('hidden'); }
+
+// Hann window
+function makeHannWindow(n){
+  const w = new Float32Array(n);
+  for(let i = 0; i < n; i++) w[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (n - 1)));
+  return w;
+}
+
+// In-place Cooley-Tukey radix-2 FFT
+function fftInPlace(re, im){
+  const n = re.length;
+  for(let i = 1, j = 0; i < n; i++){
+    let bit = n >> 1;
+    for(; j & bit; bit >>= 1) j ^= bit;
+    j ^= bit;
+    if(i < j){
+      let t = re[i]; re[i] = re[j]; re[j] = t;
+          t = im[i]; im[i] = im[j]; im[j] = t;
+    }
+  }
+  for(let len = 2; len <= n; len <<= 1){
+    const half = len >> 1;
+    const ang  = -2 * Math.PI / len;
+    const wRe  = Math.cos(ang), wIm = Math.sin(ang);
+    for(let i = 0; i < n; i += len){
+      let cRe = 1, cIm = 0;
+      for(let j = 0; j < half; j++){
+        const uRe = re[i+j],       uIm = im[i+j];
+        const vRe = re[i+j+half]*cRe - im[i+j+half]*cIm;
+        const vIm = re[i+j+half]*cIm + im[i+j+half]*cRe;
+        re[i+j]      = uRe + vRe;  im[i+j]      = uIm + vIm;
+        re[i+j+half] = uRe - vRe;  im[i+j+half] = uIm - vIm;
+        const nRe = cRe*wRe - cIm*wIm;
+        cIm = cRe*wIm + cIm*wRe;   cRe = nRe;
+      }
+    }
+  }
+}
+
+// dB magnitude spectrum from one windowed frame
+function computeSpectrum(mono, offset, fftSize, hannWin, re, im){
+  re.fill(0); im.fill(0);
+  const end = Math.min(offset + fftSize, mono.length);
+  for(let i = 0, s = offset; s < end; i++, s++) re[i] = mono[s] * hannWin[i];
+  fftInPlace(re, im);
+  const half = fftSize >> 1;
+  const spec = new Float32Array(half);
+  for(let i = 0; i < half; i++){
+    const mag = Math.sqrt(re[i]*re[i] + im[i]*im[i]) / fftSize;
+    spec[i] = mag > 1e-12 ? 20 * Math.log10(mag) : -120;
+  }
+  return spec;
+}
+
+// 12-bin normalised chroma from a dB spectrum (freqLo–freqHi Hz band)
+function audChromaFromFFT(spec, sampleRate, fftSize, freqLo, freqHi){
+  const chroma = new Array(12).fill(0);
+  const bw = sampleRate / fftSize;
+  for(let bin = 1; bin < spec.length; bin++){
+    const freq = bin * bw;
+    if(freq < freqLo || freq > freqHi) continue;
+    const db = spec[bin];
+    if(db < -80) continue;
+    const pc = ((Math.round(12 * Math.log2(freq / 440) + 69) % 12) + 12) % 12;
+    chroma[pc] += Math.pow(10, db / 20);
+  }
+  const sum = chroma.reduce((a, b) => a + b, 0);
+  return sum > 0 ? chroma.map(v => v / sum) : null;
+}
+
+// Estimate BPM from half-wave rectified chroma flux autocorrelation
+function estimateTempoFromTimeline(timeline){
+  const frames = timeline.filter(f => f.chroma);
+  if(frames.length < 20) return 120;
+  const flux = [];
+  for(let i = 1; i < frames.length; i++){
+    const p = frames[i-1].chroma, c = frames[i].chroma;
+    let f = 0;
+    for(let pc = 0; pc < 12; pc++){ const d = c[pc] - p[pc]; if(d > 0) f += d; }
+    flux.push(f);
+  }
+  const hopSec = AUD_HOP_MS / 1000;
+  const minLag = Math.max(1, Math.round(0.25 / hopSec));
+  const maxLag = Math.min(flux.length - 1, Math.round(1.5 / hopSec));
+  let bestLag = Math.round(0.5 / hopSec), bestCorr = -Infinity;
+  for(let lag = minLag; lag <= maxLag; lag++){
+    let corr = 0;
+    for(let i = 0; i + lag < flux.length; i++) corr += flux[i] * flux[i + lag];
+    if(corr > bestCorr){ bestCorr = corr; bestLag = lag; }
+  }
+  let bpm = Math.round(60 / (bestLag * hopSec));
+  if(bpm > 200) bpm = Math.round(bpm / 2);
+  if(bpm < 60)  bpm = Math.round(bpm * 2);
+  return Math.max(60, Math.min(220, bpm));
+}
+
+// Build beat-aligned Format-0 MIDI from timeline at detected BPM.
+// Each beat's chroma is averaged and emitted as velocity-weighted
+// single-octave notes (C4–B4) so downstream harmony analysis sees
+// proper pitch-class weights, not pre-voiced SATB intervals.
+function buildBeatAlignedMidi(timeline, bpm){
+  const beatSec  = 60 / bpm;
+  const hopSec   = AUD_HOP_MS / 1000;
+  const totalSec = (timeline[timeline.length-1]?.time ?? 0) + hopSec;
+  const numBeats = Math.ceil(totalSec / beatSec);
+  const usPerBeat = Math.round(60e6 / bpm);
+  const tB = [(usPerBeat >> 16) & 0xFF, (usPerBeat >> 8) & 0xFF, usPerBeat & 0xFF];
+  const absEvs = [];
+  for(let beat = 0; beat < numBeats; beat++){
+    const beatStart = beat * beatSec;
+    const beatEnd   = beatStart + beatSec;
+    const beatTick  = beat * AUD_TPB;
+    const offTick   = beatTick + AUD_TPB - Math.round(AUD_TPB * 0.1);
+    const chromaFrames = timeline.filter(f => f.time >= beatStart && f.time < beatEnd && f.chroma);
+    if(chromaFrames.length){
+      const avg = new Array(12).fill(0);
+      for(const f of chromaFrames) for(let pc = 0; pc < 12; pc++) avg[pc] += f.chroma[pc];
+      const maxC = Math.max(...avg);
+      if(maxC > 0){
+        for(let pc = 0; pc < 12; pc++){
+          const vel = Math.round(avg[pc] / maxC * 100);
+          if(vel < 12) continue;
+          absEvs.push({_tick:beatTick, kind:'noteOn',  channel:0, note:60+pc, velocity:vel});
+          absEvs.push({_tick:offTick,  kind:'noteOff', channel:0, note:60+pc, velocity:0});
+        }
+      }
+    }
+  }
+  absEvs.sort((a,b) => a._tick - b._tick);
+  const track = [
+    {delta:0, kind:'meta', metaType:0x51, data:tB},
+    {delta:0, kind:'meta', metaType:0x58, data:[4,2,24,8]},
+  ];
+  let prev = 0;
+  for(const ev of absEvs){
+    const {_tick, ...rest} = ev;
+    track.push({...rest, delta:Math.max(0, _tick - prev)});
+    prev = _tick;
+  }
+  const lastTick = absEvs.length ? absEvs[absEvs.length-1]._tick : 0;
+  track.push({delta:Math.max(0, lastTick - prev), kind:'meta', metaType:0x2F, data:[]});
+  return {format:0, numTracks:1, division:AUD_TPB, tracks:[track]};
+}
+
+// Main offline audio analysis.
+// Returns timeline: [{time, chroma}]
+// Frames where spectral flux exceeds AUD_FLUX_THRESH get chroma=null
+// (percussion/transient rejection) and are skipped in beat averaging.
+async function analyzeAudioBuffer(audioBuffer, onProgress){
+  const sampleRate = audioBuffer.sampleRate;
+  const fftSize    = AUD_FFT_SIZE;
+  const hopSamples = Math.round(sampleRate * AUD_HOP_MS / 1000);
+
+  // Mix to mono
+  const numCh = audioBuffer.numberOfChannels;
+  const mono   = new Float32Array(audioBuffer.length);
+  for(let ch = 0; ch < numCh; ch++){
+    const chData = audioBuffer.getChannelData(ch);
+    for(let i = 0; i < mono.length; i++) mono[i] += chData[i] / numCh;
+  }
+
+  const hannWin     = makeHannWindow(fftSize);
+  const re          = new Float64Array(fftSize);
+  const im          = new Float64Array(fftSize);
+  const totalFrames = Math.max(1, Math.floor((mono.length - fftSize) / hopSamples) + 1);
+  const timeline    = [];
+  const bw          = sampleRate / fftSize;
+  const fluxLoBin   = Math.round(150  / bw);
+  const fluxHiBin   = Math.round(3000 / bw);
+  let prevSpec      = null;
+
+  for(let frame = 0; frame < totalFrames; frame++){
+    const offset = frame * hopSamples;
+    const spec   = computeSpectrum(mono, offset, fftSize, hannWin, re, im);
+    const time   = offset / sampleRate;
+
+    // Spectral flux transient detection (percussion rejection)
+    let isTransient = false;
+    if(prevSpec){
+      let flux = 0, count = 0;
+      for(let b = fluxLoBin; b < fluxHiBin && b < spec.length; b++){
+        const d = spec[b] - prevSpec[b];
+        if(d > 0){ flux += d; count++; }
+      }
+      isTransient = (count > 0) && (flux / count) > AUD_FLUX_THRESH;
+    }
+    prevSpec = spec.slice(0, fluxHiBin + 1);
+
+    // Extract chroma only from harmonic (non-transient) frames
+    const chroma = isTransient ? null : audChromaFromFFT(spec, sampleRate, fftSize, 200, 2800);
+    timeline.push({ time, chroma });
+
+    if(frame % 100 === 0){
+      onProgress?.(frame / totalFrames);
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+  onProgress?.(1);
+  return timeline;
+}
+
+// High-level: load audio file → MIDI → add to APP.files and display
+async function loadAudioFile(file){
+  try {
+    showAudModal('Decoding audio…', 0.02);
+    await new Promise(r => setTimeout(r, 0));
+
+    const arrayBuf  = await file.arrayBuffer();
+    const audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
+    const audioBuffer = await audioCtx.decodeAudioData(arrayBuf);
+    await audioCtx.close();
+
+    showAudModal('Extracting pitch content…', 0.1);
+    const timeline = await analyzeAudioBuffer(audioBuffer, pct => {
+      showAudModal('Extracting pitch content…', 0.1 + pct * 0.55);
+    });
+
+    showAudModal('Detecting tempo…', 0.65);
+    await new Promise(r => setTimeout(r, 0));
+    const bpm = estimateTempoFromTimeline(timeline);
+
+    showAudModal(`Building MIDI grid (${bpm} BPM)…`, 0.72);
+    await new Promise(r => setTimeout(r, 0));
+    const rawMidi = buildBeatAlignedMidi(timeline, bpm);
+
+    showAudModal('Analyzing harmony…', 0.85);
+    await new Promise(r => setTimeout(r, 0));
+
+    const baseName = file.name.replace(/\.[^.]+$/, '');
+    const entry = {
+      name: baseName + ' [audio]',
+      midi: rawMidi, notes: null, noteFreqMap: null,
+      histogram: null, candidates: null, root: 0, scaleIndex: 0,
+      segments: null, error: null, _bpm: bpm, _isAudio: true,
+    };
+    entry.notes = buildNoteList(rawMidi);
+    const freqMap = new Array(128).fill(0);
+    for(const n of entry.notes) if(n.channel !== 9) freqMap[n.note]++;
+    entry.noteFreqMap = freqMap;
+    analyzeEntry(entry);
+
+    hideAudModal();
+    APP.files.push(entry);
+    showWorkspace();
+    renderFileList();
+    selectFile(APP.files.length - 1);
+
+  } catch(err) {
+    hideAudModal();
+    console.error('Audio load error:', err);
+    alert('Could not analyze audio: ' + err.message);
+  }
 }
 
 document.addEventListener('DOMContentLoaded',()=>{
@@ -2315,6 +2631,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   // File inputs
   document.getElementById('fileInput').addEventListener('change',e=>{ if(e.target.files.length) loadFiles(e.target.files); e.target.value=''; });
   document.getElementById('folderInput').addEventListener('change',e=>{ if(e.target.files.length) loadFiles(e.target.files); e.target.value=''; });
+  document.getElementById('audioInput').addEventListener('change',e=>{ if(e.target.files[0]) loadAudioFile(e.target.files[0]); e.target.value=''; });
 
   // Sidebar buttons
   document.getElementById('btnAdd').addEventListener('click',()=>document.getElementById('fileInput').click());
