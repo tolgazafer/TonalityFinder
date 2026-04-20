@@ -2908,7 +2908,8 @@ async function loadAndAnalyze(file){
     const notes   = buildNoteList(rawMidi);
     const hist    = buildWeightedHistogram(notes, rawMidi, APP.weights);
     const cands   = detectBest(hist);
-    const segs    = detectModulations(notes, rawMidi, APP.weights, APP.modWindow || 4, APP.modSens || 3);
+    // Use wider windows and max resistance to change for noisy audio source
+    const segs    = detectModulations(notes, rawMidi, APP.weights, 8, 1);
     if(segs.length === 1 && cands.length){
       segs[0].root = cands[0].root; segs[0].scaleIndex = cands[0].scaleIndex;
     }
@@ -2948,9 +2949,17 @@ async function loadAndAnalyze(file){
     }
 
   } catch(err){
+    console.error('loadAndAnalyze error:', err);
     document.getElementById('audProgressWrap').style.display = 'none';
-    document.getElementById('audFileInfo').innerHTML +=
-      ` <span style="color:var(--red);font-size:12px">Error: ${err.message}</span>`;
+    // Reset UI so user can try another file
+    document.getElementById('audFileInfo').style.display = 'none';
+    document.getElementById('audDrop').style.display     = 'block';
+    document.getElementById('audResults').style.display  = 'none';
+    // Show error in drop zone temporarily
+    const hint = document.querySelector('#audDrop .aud-drop-hint');
+    const origHint = hint.textContent;
+    hint.innerHTML = `<span style="color:var(--red)">Error: ${err.message}.<br>Try MP3 or WAV if the format isn't supported.</span>`;
+    setTimeout(() => { hint.textContent = origHint; }, 5000);
   }
 }
 
