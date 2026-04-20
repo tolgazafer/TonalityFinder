@@ -537,6 +537,20 @@
       -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
       background: var(--dim); cursor: pointer; border: none;
     }
+    /* ── Timeline bar labels ── */
+    .aud-bar-label {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.8px;
+      text-transform: uppercase; color: var(--dim); margin-bottom: 5px;
+    }
+    /* ── Piano roll ── */
+    .aud-piano-roll-wrap {
+      position: relative; overflow: hidden;
+      border-radius: var(--r); margin-bottom: 18px;
+    }
+    #audPianoRoll {
+      display: block; width: 100%; background: var(--s1);
+      border: 1px solid var(--border); border-radius: var(--r);
+    }
   </style>
 </head>
 <body>
@@ -725,12 +739,26 @@
         </div>
       </div>
 
-      <!-- Chord display + timeline -->
+      <!-- Chord display + timelines -->
       <div class="yt-chord-display" id="ytChordDisplay"></div>
       <div class="yt-chord-sub"    id="ytChordSub"></div>
+
+      <div class="aud-bar-label">Chords</div>
       <div class="yt-timeline-bar" id="ytTimelineBar">
         <div class="yt-tl-segs" id="ytTlSegs"></div>
         <div class="yt-playhead" id="ytPlayhead"></div>
+      </div>
+
+      <div class="aud-bar-label">Key / Scale</div>
+      <div class="yt-timeline-bar" id="audKeyBar" style="display:none">
+        <div class="yt-tl-segs" id="audKeySegs"></div>
+        <div class="yt-playhead" id="audKeyPlayhead"></div>
+      </div>
+
+      <div class="aud-bar-label" style="margin-top:4px">Piano Roll</div>
+      <div class="aud-piano-roll-wrap">
+        <canvas id="audPianoRoll"></canvas>
+        <div class="yt-playhead" id="audPRPlayhead"></div>
       </div>
 
       <!-- Downloads -->
@@ -2520,6 +2548,8 @@ const YTA = {
   chordEntries: [],
   bassEntries:  [],
   melodyEntries:[],
+  rawMidi:      null,
+  segs:         null,
   chordMidi:    null,
   bassMidi:     null,
   melodyMidi:   null,
@@ -2796,6 +2826,124 @@ function ytFinalizeMidi(){
   YTA.melodyMidi = buildMidiFromEntries(YTA.melodyEntries, t + ' - Melody');
 }
 
+// ── Rebuild chord entries directly from analysis data ────────
+// Uses the same histogram logic as buildChordTrackEvs so labels exactly
+// match the voiced chords — avoids re-analysis errors from legato notes.
+function buildChordEntriesFromAnalysis(rawMidi, segs){
+  const tpb     = getTPB(rawMidi);
+  const pitched = buildNoteList(rawMidi).filter(n => n.channel !== 9);
+  const lastTick = getMidiLastTick(rawMidi);
+  const toSec   = buildTempoConverter(rawMidi);
+  const entries = [];
+  for(let si = 0; si < segs.length; si++){
+    const seg      = segs[si];
+    const segStart = si === 0 ? 0 : seg.startTick;
+    const segEnd   = seg.endTick ?? (si + 1 < segs.length ? segs[si + 1].startTick : lastTick);
+    for(let t = segStart; t < segEnd; t += tpb){
+      const winEnd = Math.min(t + tpb, segEnd);
+      const hist   = windowHist(pitched, t, winEnd);
+      const { rootPc, intervals } = bestChordRootAndType(hist, seg.root, seg.scaleIndex);
+      const startSec = toSec(t);
+      const endSec   = toSec(winEnd);
+      const last = entries[entries.length - 1];
+      if(last && last.rootPc === rootPc && intervals.join(',') === last.intervals.join(','))
+        last.endSec = endSec;
+      else
+        entries.push({ startSec, endSec, rootPc, intervals });
+    }
+  }
+  return entries;
+}
+
+// ── Key / Scale bar render ────────────────────────────────────
+function ytRenderKeyBar(segs, rawMidi){
+  const barEl  = document.getElementById('audKeyBar');
+  const segsEl = document.getElementById('audKeySegs');
+  if(!barEl || !segsEl) return;
+  segsEl.innerHTML = '';
+  if(!segs || !segs.length){ barEl.style.display = 'none'; return; }
+
+  const toSec   = buildTempoConverter(rawMidi);
+  const lastTick = getMidiLastTick(rawMidi);
+  const firstSec = toSec(segs[0].startTick ?? 0);
+  const lastSec  = toSec(segs[segs.length - 1].endTick ?? lastTick);
+  const totalDur = lastSec - firstSec;
+  if(totalDur <= 0) return;
+
+  for(let si = 0; si < segs.length; si++){
+    const seg      = segs[si];
+    const startSec = toSec(seg.startTick ?? 0);
+    const endSec   = toSec(seg.endTick ?? (si + 1 < segs.length ? segs[si + 1].startTick : lastTick));
+    const pct      = (endSec - startSec) / totalDur * 100;
+    const color    = segColor(seg.root, seg.scaleIndex);
+    const label    = NOTE_NAMES[seg.root % 12] + ' ' + (SCALES[seg.scaleIndex]?.name ?? '');
+    const div = document.createElement('div');
+    div.className       = 'yt-tl-seg';
+    div.style.width     = pct.toFixed(2) + '%';
+    div.style.minWidth  = '2px';
+    div.style.background = color;
+    div.textContent     = pct > 5 ? label : '';
+    div.title           = label;
+    segsEl.appendChild(div);
+  }
+  barEl.style.display = 'block';
+}
+
+// ── Piano roll canvas render ──────────────────────────────────
+function drawPianoRoll(midi){
+  const canvas = document.getElementById('audPianoRoll');
+  if(!canvas) return;
+  const toSec  = buildTempoConverter(midi);
+  const notes  = buildNoteList(midi).filter(n => n.channel !== 9);
+  if(!notes.length){ canvas.style.display = 'none'; return; }
+  canvas.style.display = 'block';
+
+  const noteMin  = Math.max(24, Math.min(...notes.map(n => n.note)) - 2);
+  const noteMax  = Math.min(96, Math.max(...notes.map(n => n.note)) + 2);
+  const noteRange = noteMax - noteMin + 1;
+  const totalSec  = Math.max(...notes.map(n => toSec(n.startTick + n.duration)));
+
+  const W    = canvas.offsetWidth || 600;
+  const rowH = Math.max(3, Math.min(8, Math.floor(160 / noteRange)));
+  const H    = noteRange * rowH + 2;
+  canvas.width  = W;
+  canvas.height = H;
+  canvas.style.height = H + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#13132a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Alternating row backgrounds for black keys
+  for(let n = noteMin; n <= noteMax; n++){
+    const pc      = n % 12;
+    const isBlack = [1,3,6,8,10].includes(pc);
+    const y       = H - (n - noteMin + 1) * rowH;
+    if(isBlack){
+      ctx.fillStyle = 'rgba(255,255,255,0.04)';
+      ctx.fillRect(0, y, W, rowH);
+    }
+    if(pc === 0){   // C line
+      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+      ctx.lineWidth   = 0.5;
+      ctx.beginPath(); ctx.moveTo(0, y + rowH); ctx.lineTo(W, y + rowH); ctx.stroke();
+    }
+  }
+
+  // Note rectangles
+  for(const n of notes){
+    const x  = toSec(n.startTick) / totalSec * W;
+    const w  = Math.max(1.5, toSec(n.startTick + n.duration) / totalSec * W - x);
+    const y  = H - (n.note - noteMin + 1) * rowH + 1;
+    const h  = Math.max(1, rowH - 1);
+    const hue = (n.note * 29) % 360;
+    ctx.fillStyle = `hsl(${hue},60%,62%)`;
+    ctx.fillRect(x, y, w, h);
+  }
+
+  canvas._totalSec = totalSec;
+}
+
 // ── Chord timeline bar render ─────────────────────────────────
 // Expects YTA.chordEntries to have { startSec, endSec, rootPc, intervals }.
 function ytRenderTimeline(){
@@ -2951,6 +3099,7 @@ async function loadAndAnalyze(file){
   audStop();
   ytStopSync();
   YTA.timeline = []; YTA.prevVoicing = null;
+  YTA.rawMidi = null; YTA.segs = null;
   YTA.chordMidi = YTA.bassMidi = YTA.melodyMidi = null;
 
   // Show file info
@@ -3010,10 +3159,12 @@ async function loadAndAnalyze(file){
     analyzeEntry(audEntry);   // histogram → key → modulations (uses APP.modWindow / APP.modSens)
 
     const segs = entrySegments(audEntry);
+    YTA.rawMidi = rawMidi;    // stored so key bar + piano roll can reference it
+    YTA.segs    = segs;
     YTA.chordMidi = buildChordOnlyMidi(rawMidi, segs, audEntry.notes, YTA.audioTitle);
 
-    // ── Step 3: harmony bar from the generated chord MIDI ─────────
-    YTA.chordEntries = buildChordEntriesFromMidi(YTA.chordMidi);
+    // ── Step 3: chord entries & bars from analysis data ────────────
+    YTA.chordEntries = buildChordEntriesFromAnalysis(rawMidi, segs);
 
     // Bass and melody remain timeline-derived
     YTA.bassEntries   = compressToEntries(YTA.timeline, f=>String(f.bassNote),   f=>f.bassNote!=null?[f.bassNote]:null, 1);
@@ -3035,10 +3186,12 @@ async function loadAndAnalyze(file){
     document.getElementById('audPlayBtn').textContent = '▶';
 
     ytRenderTimeline();
+    ytRenderKeyBar(segs, rawMidi);
 
-    // Show results
+    // Show results first so canvas has layout dimensions, then draw piano roll
     document.getElementById('audProgressWrap').style.display = 'none';
     document.getElementById('audResults').style.display      = 'block';
+    requestAnimationFrame(() => drawPianoRoll(YTA.chordMidi));
 
     // Show first chord label from chord entries (post-analysis)
     const firstEntry = YTA.chordEntries[0];
@@ -3165,6 +3318,25 @@ function audTick(){
   for(const e of YTA.chordEntries){ if(e.startSec <= t) curEntry = e; }
   if(curEntry) document.getElementById('ytChordDisplay').textContent =
     ytChordLabel(curEntry.rootPc, curEntry.intervals);
+
+  // Key bar playhead
+  if(YTA.rawMidi){
+    const kConv = buildTempoConverter(YTA.rawMidi);
+    const kTot  = kConv(getMidiLastTick(YTA.rawMidi));
+    if(kTot > 0){
+      const kPct = Math.max(0, Math.min(100, t / kTot * 100));
+      const kPh  = document.getElementById('audKeyPlayhead');
+      if(kPh) kPh.style.left = kPct + '%';
+    }
+  }
+
+  // Piano roll playhead
+  const prCanvas = document.getElementById('audPianoRoll');
+  if(prCanvas?._totalSec > 0){
+    const pPct = Math.max(0, Math.min(100, t / prCanvas._totalSec * 100));
+    const prPh = document.getElementById('audPRPlayhead');
+    if(prPh) prPh.style.left = pPct + '%';
+  }
 
   if(!YTA.audioEl.paused){
     AUD_PLAYER.rafId = requestAnimationFrame(audTick);
