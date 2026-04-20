@@ -281,6 +281,28 @@
     .legend-dot { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
     .piano-legend .note { margin-left: auto; font-size: 10px; color: var(--dim); }
 
+    /* ── PLAYBACK VOLUME ROWS ── */
+    .pb-vol-row {
+      display: flex; gap: 14px; margin-top: 10px; align-items: center;
+    }
+    .pb-vol-item { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
+    .pb-vol-label {
+      font-size: 11px; color: var(--dim); white-space: nowrap; width: 36px; flex-shrink: 0;
+    }
+    .pb-vol-slider { flex: 1; }
+
+    /* ── KEY / CHORD LIVE DISPLAY ── */
+    .mod-key-display {
+      display: flex; align-items: baseline; justify-content: space-between;
+      margin-bottom: 14px; gap: 12px;
+    }
+    .mod-key-name {
+      font-size: 24px; font-weight: 800; color: var(--text); letter-spacing: -0.4px;
+    }
+    .mod-chord-sym {
+      font-size: 22px; font-weight: 700; color: var(--accent); letter-spacing: 1px;
+    }
+
     /* ── MODULATION TIMELINE ── */
     .mod-controls {
       display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;
@@ -483,6 +505,16 @@
           </div>
           <div class="pb-time" id="pbTime">0:00 / 0:00</div>
         </div>
+        <div class="pb-vol-row">
+          <div class="pb-vol-item">
+            <span class="pb-vol-label">MIDI</span>
+            <input type="range" class="pb-vol-slider" id="pbMidiVol" min="0" max="100" value="80">
+          </div>
+          <div class="pb-vol-item" id="pbAudioVolWrap" style="display:none">
+            <span class="pb-vol-label">Audio</span>
+            <input type="range" class="pb-vol-slider" id="pbAudioVol" min="0" max="100" value="80">
+          </div>
+        </div>
       </div>
 
       <!-- Piano keyboard (under playback) -->
@@ -499,24 +531,17 @@
         </div>
       </div>
 
-      <!-- Detected key + scale -->
-      <div class="card">
-        <div class="card-hdr">Detected Key &amp; Scale</div>
-        <div class="sel-row">
-          <div class="sel-group">
-            <label for="keySelect">Root Note</label>
-            <select id="keySelect"></select>
-          </div>
-          <div class="sel-group">
-            <label for="scaleSelect">Scale</label>
-            <select id="scaleSelect"></select>
-          </div>
-        </div>
-      </div>
-
-      <!-- Modulation timeline -->
+      <!-- Key / Scale Modulations (includes live display + detected key selectors) -->
       <div class="card" id="modCard">
         <div class="card-hdr">Key / Scale Modulations</div>
+
+        <!-- Live key + chord display -->
+        <div class="mod-key-display">
+          <div class="mod-key-name" id="modKeyName">—</div>
+          <div class="mod-chord-sym" id="modChordSym"></div>
+        </div>
+
+        <!-- Timeline bar -->
         <div class="mod-controls">
           <label for="modWindow">Window</label>
           <input type="range" id="modWindow" min="2" max="16" step="1" value="4">
@@ -529,7 +554,18 @@
           <div class="mod-cur-key" id="modCurKey"></div>
           <div class="mod-playhead hidden" id="modPlayhead"></div>
         </div>
-        <div class="mod-segments-list" id="modList"></div>
+
+        <!-- Detected key + scale selectors (moved from separate card) -->
+        <div class="sel-row" style="margin-top:14px">
+          <div class="sel-group">
+            <label for="keySelect">Root Note</label>
+            <select id="keySelect"></select>
+          </div>
+          <div class="sel-group">
+            <label for="scaleSelect">Scale</label>
+            <select id="scaleSelect"></select>
+          </div>
+        </div>
       </div>
 
       <!-- Download -->
@@ -1037,6 +1073,14 @@ const CHORD_TYPES = [
   [0, 3, 6,  9],    // diminished 7th
   [0, 3, 6, 10],    // half-diminished
 ];
+const CHORD_SUFFIXES = ['', 'm', 'dim', 'aug', '7', 'maj7', 'm7', 'dim7', 'm7b5'];
+
+function chordLabel(rootPc, intervals){
+  const idx = CHORD_TYPES.findIndex(
+    t => t.length === intervals.length && t.every((v,i) => v === intervals[i])
+  );
+  return NOTE_NAMES[rootPc] + (idx >= 0 ? CHORD_SUFFIXES[idx] : '');
+}
 
 // Returns { rootPc, intervals } for the best-fitting chord against hist.
 function bestChordRootAndType(hist, segRoot, scaleIdx){
@@ -1573,8 +1617,15 @@ class MIDIPlayer {
     this._nodes=[];
     this._raf=null;
     this._endTimer=null;
+    this._master=null;
+    this._gainValue=1.0;
     this.onProgress=null; // (currentSec, totalSec)
     this.onEnd=null;
+  }
+
+  setGain(v){
+    this._gainValue=Math.max(0,Math.min(2,v));
+    if(this._master) this._master.gain.value=0.55*this._gainValue;
   }
 
   _build(){
@@ -1594,7 +1645,8 @@ class MIDIPlayer {
 
     const comp=this.ctx.createDynamicsCompressor();
     comp.threshold.value=-18; comp.connect(this.ctx.destination);
-    const master=this.ctx.createGain(); master.gain.value=0.55; master.connect(comp);
+    const master=this.ctx.createGain(); master.gain.value=0.55*this._gainValue; master.connect(comp);
+    this._master=master;
 
     const now=this.ctx.currentTime;
     this._ctxStart=now; this._offset=fromSec; this.playing=true;
@@ -1716,6 +1768,8 @@ const APP = {
   pausedAt:    0,
   activeNotes: new Set(),
   weights:     { pitch:1.0, duration:0.5, velocity:0.5, position:1.0 },
+  midiVol:     0.8,
+  audioVol:    0.8,
   modWindow:   4,    // bars per analysis window
   modSens:     3,    // sensitivity 1-5
 };
@@ -1883,6 +1937,9 @@ function renderAnalysis(entry){
   } else {
     pbCard.classList.remove('hidden');
     resetPlaybackUI(entry);
+    // Show audio volume slider only for audio-derived entries
+    const audVolWrap=document.getElementById('pbAudioVolWrap');
+    if(audVolWrap) audVolWrap.style.display=entry._isAudio?'flex':'none';
   }
 
   refreshChordButton(entry);
@@ -1901,8 +1958,7 @@ function renderAnalysis(entry){
 function refreshModulations(entry){
   const card     = document.getElementById('modCard');
   const timeline = document.getElementById('modTimeline');
-  const list     = document.getElementById('modList');
-  if(!card||!timeline||!list) return;
+  if(!card||!timeline) return;
 
   const segs = entry.segments;
   if(!segs || segs.length === 0){ card.classList.add('hidden'); return; }
@@ -1956,19 +2012,19 @@ function refreshModulations(entry){
     timeline.appendChild(ph);   // re-parent if needed
   }
 
-  // ── List below timeline (swatch + label only)
-  list.innerHTML = segs.map((seg, i) => {
-    const color = segColor(seg.root, seg.scaleIndex);
-    const label = `${NOTE_NAMES[seg.root]} ${SCALES[seg.scaleIndex].name}`;
-    return `<div class="mod-row">
-      <div class="mod-swatch" style="background:${color}"></div>
-      <div class="mod-row-label">${i===0?'<b>':''}${label}${i===0?'</b>':''}</div>
-    </div>`;
-  }).join('');
+  const firstLabel = `${NOTE_NAMES[segs[0].root]} ${SCALES[segs[0].scaleIndex].name}`;
 
-  // Seed the current-key label with the first segment
+  // Seed the key name display with the primary detected key
+  const keyNameEl = document.getElementById('modKeyName');
+  if(keyNameEl) keyNameEl.textContent = firstLabel;
+
+  // Seed the small overlay label in the bar
   const curKeyEl = document.getElementById('modCurKey');
-  if(curKeyEl) curKeyEl.textContent = `${NOTE_NAMES[segs[0].root]} ${SCALES[segs[0].scaleIndex].name}`;
+  if(curKeyEl) curKeyEl.textContent = firstLabel;
+
+  // Clear chord symbol until playback starts
+  const symEl = document.getElementById('modChordSym');
+  if(symEl) symEl.textContent = '';
 
   // Cache for fast playhead lookups
   timeline._totalSec   = totalSec;
@@ -1989,13 +2045,16 @@ function updateModPlayhead(currentSec, totalSec){
   ph.style.left = (frac * 100).toFixed(3) + '%';
   ph.classList.remove('hidden');
 
-  // Update current-key label
+  // Update current-key labels (bar overlay + large display)
   const ss = timeline._segStarts, sl = timeline._segLabels;
   if(ss && sl && ss.length){
     let idx = 0;
     for(let i = 1; i < ss.length; i++){ if(ss[i] <= currentSec) idx = i; }
-    const curKeyEl = document.getElementById('modCurKey');
-    if(curKeyEl) curKeyEl.textContent = sl[idx];
+    const label = sl[idx];
+    const curKeyEl  = document.getElementById('modCurKey');
+    const keyNameEl = document.getElementById('modKeyName');
+    if(curKeyEl)  curKeyEl.textContent  = label;
+    if(keyNameEl) keyNameEl.textContent = label;
   }
 }
 
@@ -2180,19 +2239,30 @@ function startPlayer(fromSec=0){
   if(entry._isAudio && entry._audioUrl){
     if(APP.audioEl){ APP.audioEl.pause(); APP.audioEl=null; }
     APP.audioEl=new Audio(entry._audioUrl);
+    APP.audioEl.volume=APP.audioVol;
     APP.audioEl.currentTime=fromSec;
     APP.audioEl.play().catch(()=>{});
   }
 
   APP.player=new MIDIPlayer(entry.midi);
+  APP.player.setGain(APP.midiVol);
   APP.player.onProgress=(sec,dur)=>{
     if(!dur) return;
     document.getElementById('pbFill').style.width=(sec/dur*100).toFixed(2)+'%';
     document.getElementById('pbTime').textContent=`${fmt(sec)} / ${fmt(dur)}`;
-    // Update piano with active notes and modulation playhead
     APP.activeNotes=APP.player.getNotesAtSec(sec);
     refreshPiano(entry.histogram,entry.root,entry.scaleIndex,entry.noteFreqMap,APP.activeNotes);
     updateModPlayhead(sec, dur);
+    // Live chord symbol from active notes
+    const symEl=document.getElementById('modChordSym');
+    if(symEl && APP.activeNotes.size>=2){
+      const h=new Array(12).fill(0);
+      for(const n of APP.activeNotes) h[n%12]++;
+      const sum=h.reduce((a,b)=>a+b,0);
+      const norm=sum>0?h.map(v=>v/sum):null;
+      const {rootPc,intervals}=bestChordRootAndType(norm,entry.root,entry.scaleIndex);
+      symEl.textContent=chordLabel(rootPc,intervals);
+    } else if(symEl){ symEl.textContent=''; }
   };
   APP.player.onEnd=()=>{
     APP.paused=false; APP.pausedAt=0; APP.activeNotes=new Set();
@@ -2670,6 +2740,16 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('fileInput').addEventListener('change',e=>{ if(e.target.files.length) loadFiles(e.target.files); e.target.value=''; });
   document.getElementById('folderInput').addEventListener('change',e=>{ if(e.target.files.length) loadFiles(e.target.files); e.target.value=''; });
   document.getElementById('audioInput').addEventListener('change',e=>{ if(e.target.files[0]) loadAudioFile(e.target.files[0]); e.target.value=''; });
+
+  // Volume sliders
+  document.getElementById('pbMidiVol').addEventListener('input', function(){
+    APP.midiVol = this.value / 100;
+    if(APP.player) APP.player.setGain(APP.midiVol);
+  });
+  document.getElementById('pbAudioVol').addEventListener('input', function(){
+    APP.audioVol = this.value / 100;
+    if(APP.audioEl) APP.audioEl.volume = APP.audioVol;
+  });
 
   // Sidebar buttons
   document.getElementById('btnAdd').addEventListener('click',()=>document.getElementById('fileInput').click());
