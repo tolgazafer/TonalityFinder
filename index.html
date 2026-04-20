@@ -2623,39 +2623,89 @@ function buildMidiFromEntries(entries, label){
   return {format:0, numTracks:1, division:AUD_TPB, tracks:[track]};
 }
 
-// ── Build a raw MIDI from audio FFT timeline ──────────────────
-// Produces a Format-0 MIDI at AUD_BPM/AUD_TPB whose note events
-// represent the detected harmonic content per frame.  This is
-// fed into the existing key/scale/chord detection pipeline so
-// the output chord MIDI uses exactly the same algorithm as MIDI
-// file analysis (modulations, voice-leading, CC85/86 injection).
-function buildRawMidiFromTimeline(timeline){
-  const hopTicks = Math.max(1, audSecToTick(AUD_HOP_MS / 1000));
-  const absEvs   = [];
+// ── Estimate BPM from chroma-flux autocorrelation ────────────
+function estimateTempoFromTimeline(timeline){
+  const frames = timeline.filter(f => f.chordChroma);
+  if(frames.length < 20) return 120;
 
-  for(const frame of timeline){
-    if(!frame.chordNotes) continue;
-    const st = audSecToTick(frame.time);
-    const et = st + hopTicks - 1;
+  // Half-wave rectified chroma flux
+  const flux = [];
+  for(let i = 1; i < frames.length; i++){
+    const p = frames[i-1].chordChroma, c = frames[i].chordChroma;
+    let f = 0;
+    for(let pc = 0; pc < 12; pc++){ const d = c[pc] - p[pc]; if(d > 0) f += d; }
+    flux.push(f);
+  }
 
-    // 4-voice chord (SATB) on ch 0 — drives chord detection
-    for(const note of frame.chordNotes){
-      const n = Math.max(0, Math.min(127, note));
-      absEvs.push({_tick:st, kind:'noteOn',  channel:0, note:n, velocity:64});
-      absEvs.push({_tick:et, kind:'noteOff', channel:0, note:n, velocity:0 });
+  const hopSec  = AUD_HOP_MS / 1000;
+  const minLag  = Math.max(1, Math.round(0.25 / hopSec));  // 240 BPM max
+  const maxLag  = Math.min(flux.length - 1, Math.round(1.5 / hopSec));  // 40 BPM min
+
+  let bestLag = Math.round(0.5 / hopSec), bestCorr = -Infinity;
+  for(let lag = minLag; lag <= maxLag; lag++){
+    let corr = 0;
+    for(let i = 0; i + lag < flux.length; i++) corr += flux[i] * flux[i + lag];
+    if(corr > bestCorr){ bestCorr = corr; bestLag = lag; }
+  }
+
+  let bpm = Math.round(60 / (bestLag * hopSec));
+  if(bpm > 200) bpm = Math.round(bpm / 2);
+  if(bpm < 60)  bpm = Math.round(bpm * 2);
+  return Math.max(60, Math.min(220, bpm));
+}
+
+// ── Build beat-aligned raw MIDI from FFT timeline ─────────────
+// Groups chroma frames by beat (at detected BPM), averages chroma
+// per beat, then emits velocity-weighted single-octave notes so
+// the downstream harmony pipeline sees proper pitch-class weights
+// rather than pre-voiced SATB intervals.  This prevents 7th-chord
+// self-reinforcement and aligns notes to the musical grid.
+function buildBeatAlignedMidi(timeline, bpm){
+  const tpb     = AUD_TPB;
+  const beatSec = 60 / bpm;
+  const hopSec  = AUD_HOP_MS / 1000;
+  const totalSec = (timeline[timeline.length-1]?.time ?? 0) + hopSec;
+  const numBeats = Math.ceil(totalSec / beatSec);
+  const usPerBeat = Math.round(60e6 / bpm);
+  const tB = [(usPerBeat >> 16) & 0xFF, (usPerBeat >> 8) & 0xFF, usPerBeat & 0xFF];
+
+  const absEvs = [];
+  for(let beat = 0; beat < numBeats; beat++){
+    const beatStart = beat * beatSec;
+    const beatEnd   = beatStart + beatSec;
+    const beatTick  = beat * tpb;
+    const offTick   = beatTick + tpb - Math.round(tpb * 0.1);
+
+    // Average chroma over all frames in this beat
+    const chromaFrames = timeline.filter(f => f.time >= beatStart && f.time < beatEnd && f.chordChroma);
+    if(chromaFrames.length){
+      const avg = new Array(12).fill(0);
+      for(const f of chromaFrames) for(let pc = 0; pc < 12; pc++) avg[pc] += f.chordChroma[pc];
+      const maxC = Math.max(...avg);
+      if(maxC > 0){
+        for(let pc = 0; pc < 12; pc++){
+          const vel = Math.round(avg[pc] / maxC * 100);
+          if(vel < 12) continue;
+          const note = 60 + pc;  // C4–B4 single octave
+          absEvs.push({_tick:beatTick, kind:'noteOn',  channel:0, note, velocity:vel});
+          absEvs.push({_tick:offTick,  kind:'noteOff', channel:0, note, velocity:0 });
+        }
+      }
     }
-    // Bass note on ch 1 — adds low-register pitch-class weight
-    if(frame.bassNote != null){
-      const n = Math.max(0, Math.min(127, frame.bassNote));
-      absEvs.push({_tick:st, kind:'noteOn',  channel:1, note:n, velocity:72});
-      absEvs.push({_tick:et, kind:'noteOff', channel:1, note:n, velocity:0 });
+
+    // Bass: lowest detected note in this beat window
+    const bassFrames = timeline.filter(f => f.time >= beatStart && f.time < beatEnd && f.bassNote != null);
+    if(bassFrames.length){
+      const bass = Math.max(28, Math.min(50, Math.min(...bassFrames.map(f => f.bassNote))));
+      absEvs.push({_tick:beatTick, kind:'noteOn',  channel:1, note:bass, velocity:72});
+      absEvs.push({_tick:offTick,  kind:'noteOff', channel:1, note:bass, velocity:0 });
     }
   }
 
   absEvs.sort((a, b) => a._tick - b._tick);
   const track = [
-    {delta:0, kind:'meta', metaType:0x51, data:[0x07,0xA1,0x20]}, // 120 BPM
-    {delta:0, kind:'meta', metaType:0x58, data:[4,2,24,8]},       // 4/4
+    {delta:0, kind:'meta', metaType:0x51, data:tB},
+    {delta:0, kind:'meta', metaType:0x58, data:[4,2,24,8]},
   ];
   let prev = 0;
   for(const ev of absEvs){
@@ -2666,6 +2716,40 @@ function buildRawMidiFromTimeline(timeline){
   const lastTick = absEvs.length ? absEvs[absEvs.length-1]._tick : 0;
   track.push({delta:Math.max(0, lastTick-prev), kind:'meta', metaType:0x2F, data:[]});
   return {format:0, numTracks:1, division:AUD_TPB, tracks:[track]};
+}
+
+// ── Derive chord timeline entries from a chord-only MIDI ──────
+// Used to populate the harmony bar with the actual analysis output.
+function buildChordEntriesFromMidi(midi){
+  const track  = midi.tracks[0];
+  if(!track) return [];
+  const conv   = buildTempoConverter(midi);
+  const groups = {};   // tick → [note, ...]
+  let tick = 0;
+  for(const ev of track){
+    tick += ev.delta;
+    if(ev.kind === 'noteOn' && ev.velocity > 0){
+      if(!groups[tick]) groups[tick] = [];
+      groups[tick].push(ev.note);
+    }
+  }
+  const ticks = Object.keys(groups).map(Number).sort((a, b) => a - b);
+  const entries = [];
+  for(let i = 0; i < ticks.length; i++){
+    const t     = ticks[i];
+    const notes = groups[t];
+    const startSec = conv(t);
+    const endSec   = i + 1 < ticks.length ? conv(ticks[i+1]) : startSec + 60/120;
+    // Build a mini histogram from the chord note pitch classes
+    const hist = new Array(12).fill(0);
+    for(const n of notes) hist[n % 12] += 1;
+    const s = hist.reduce((a,b)=>a+b,0);
+    const normHist = s > 0 ? hist.map(v => v/s) : null;
+    const {rootPc, intervals} = bestChordRootAndType(normHist, 0, 0);
+    entries.push({ startSec, endSec, notes, channel:0,
+                   _key: notes.slice().sort((a,b)=>a-b).join(','), rootPc, intervals });
+  }
+  return entries;
 }
 
 // ── Merge consecutive frames with identical key into spans ────
@@ -2713,32 +2797,34 @@ function ytFinalizeMidi(){
 }
 
 // ── Chord timeline bar render ─────────────────────────────────
+// Expects YTA.chordEntries to have { startSec, endSec, rootPc, intervals }.
 function ytRenderTimeline(){
-  const segsEl = document.getElementById('ytTlSegs');
+  const segsEl  = document.getElementById('ytTlSegs');
+  const barEl   = document.getElementById('ytTimelineBar');
   segsEl.innerHTML = '';
+  barEl.style.display = 'block';   // always show (empty bar is fine)
   if(!YTA.chordEntries.length) return;
 
-  const totalDur = YTA.chordEntries[YTA.chordEntries.length-1].endSec
-                 - YTA.chordEntries[0].startSec;
+  const first    = YTA.chordEntries[0].startSec;
+  const last     = YTA.chordEntries[YTA.chordEntries.length-1].endSec;
+  const totalDur = last - first;
   if(totalDur <= 0) return;
 
   const colorMap = {};
   let colorIdx   = 0;
   for(const e of YTA.chordEntries){
-    const frame = YTA.timeline.find(f => f.time >= e.startSec && f.chordNotes);
-    const label = frame ? ytChordLabel(frame.rootPc, frame.intervals) : '?';
+    const label = ytChordLabel(e.rootPc, e.intervals);
     if(!colorMap[label]) colorMap[label] = TL_COLORS[colorIdx++ % TL_COLORS.length];
     const pct = (e.endSec - e.startSec) / totalDur * 100;
     const seg = document.createElement('div');
-    seg.className       = 'yt-tl-seg';
-    seg.style.width     = pct.toFixed(2) + '%';
-    seg.style.minWidth  = '1px';
-    seg.style.background= colorMap[label];
-    seg.textContent     = pct > 2.5 ? label : '';
-    seg.title           = label;
+    seg.className        = 'yt-tl-seg';
+    seg.style.width      = pct.toFixed(2) + '%';
+    seg.style.minWidth   = '2px';
+    seg.style.background = colorMap[label];
+    seg.textContent      = pct > 2.5 ? label : '';
+    seg.title            = label;
     segsEl.appendChild(seg);
   }
-  document.getElementById('ytTimelineBar').style.display = 'block';
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -2844,7 +2930,7 @@ async function analyzeAudioBuffer(audioBuffer, onProgress){
     const rawBass   = dominantMidiNote(spec, sampleRate, fftSize, 27,  300);
     const rawMelody = dominantMidiNote(spec, sampleRate, fftSize, 300, 5000);
     timeline.push({
-      time, rootPc, intervals, chordNotes,
+      time, rootPc, intervals, chordNotes, chordChroma,
       bassNote:   rawBass   != null ? Math.max(28, Math.min(50, rawBass))   : null,
       melodyNote: rawMelody != null ? Math.max(48, Math.min(96, rawMelody)) : null,
     });
@@ -2900,28 +2986,36 @@ async function loadAndAnalyze(file){
         `Analyzing… ${(pct * 100).toFixed(0)}%  (${(pct * dur).toFixed(0)}s / ${fmt(dur)})`;
     });
 
-    // Build chord MIDI through the exact same pipeline as MIDI file analysis.
-    // Step 1: build raw MIDI from FFT timeline (pitch-class representation of audio).
-    // Step 2: run analyzeEntry (histogram → key → modulations), exactly like a dropped MIDI file.
-    // Step 3: buildChordOnlyMidi via entrySegments — same as downloadChord().
+    // ── Step 1: detect tempo, build beat-aligned raw MIDI ────────
     YTA.audioTitle = file.name.replace(/\.[^.]+$/, '');
-    document.getElementById('audProgressLabel').textContent = 'Building chord MIDI…';
+    document.getElementById('audProgressLabel').textContent = 'Detecting tempo…';
+    await new Promise(r => setTimeout(r, 0));
 
-    const rawMidi = buildRawMidiFromTimeline(YTA.timeline);
+    const detectedBpm = estimateTempoFromTimeline(YTA.timeline);
 
-    // Mirror analyzeEntry() exactly
+    document.getElementById('audProgressLabel').textContent =
+      `Building chord MIDI… (detected ${detectedBpm} BPM)`;
+    await new Promise(r => setTimeout(r, 0));
+
+    // Beat-aligned MIDI uses averaged chroma per beat (velocity-weighted pitch classes),
+    // not pre-voiced SATB intervals, so 7th chords can't self-reinforce.
+    const rawMidi = buildBeatAlignedMidi(YTA.timeline, detectedBpm);
+
+    // ── Step 2: run exact same analysis as MIDI file workflow ─────
     const audEntry = {
       name: YTA.audioTitle, midi: rawMidi, notes: null,
       histogram: null, candidates: null, root: 0, scaleIndex: 0, segments: null, error: null,
     };
     audEntry.notes = buildNoteList(rawMidi);
-    analyzeEntry(audEntry);           // sets histogram, candidates, root, scaleIndex, segments
+    analyzeEntry(audEntry);   // histogram → key → modulations (uses APP.modWindow / APP.modSens)
 
     const segs = entrySegments(audEntry);
     YTA.chordMidi = buildChordOnlyMidi(rawMidi, segs, audEntry.notes, YTA.audioTitle);
 
-    // Bass and melody MIDIs remain timeline-derived (raw FFT, lighter processing)
-    YTA.chordEntries  = compressToEntries(YTA.timeline, f=>(f.chordNotes||[]).join(','), f=>f.chordNotes||null, 0);
+    // ── Step 3: harmony bar from the generated chord MIDI ─────────
+    YTA.chordEntries = buildChordEntriesFromMidi(YTA.chordMidi);
+
+    // Bass and melody remain timeline-derived
     YTA.bassEntries   = compressToEntries(YTA.timeline, f=>String(f.bassNote),   f=>f.bassNote!=null?[f.bassNote]:null, 1);
     YTA.melodyEntries = compressToEntries(YTA.timeline, f=>String(f.melodyNote), f=>f.melodyNote!=null?[f.melodyNote]:null, 2);
     YTA.bassMidi   = buildMidiFromEntries(YTA.bassEntries,   YTA.audioTitle + ' - Bass');
@@ -2946,12 +3040,13 @@ async function loadAndAnalyze(file){
     document.getElementById('audProgressWrap').style.display = 'none';
     document.getElementById('audResults').style.display      = 'block';
 
-    // Show first chord label
-    const first = YTA.timeline.find(f => f.chordNotes);
-    if(first){
-      document.getElementById('ytChordDisplay').textContent = ytChordLabel(first.rootPc, first.intervals);
-      document.getElementById('ytChordSub').textContent     =
-        `${YTA.chordEntries.length} chord segments · ${fmt(dur)} total`;
+    // Show first chord label from chord entries (post-analysis)
+    const firstEntry = YTA.chordEntries[0];
+    if(firstEntry){
+      document.getElementById('ytChordDisplay').textContent =
+        ytChordLabel(firstEntry.rootPc, firstEntry.intervals);
+      document.getElementById('ytChordSub').textContent =
+        `${YTA.chordEntries.length} chords · ${detectedBpm} BPM · ${fmt(dur)}`;
     }
 
   } catch(err){
@@ -3065,10 +3160,11 @@ function audTick(){
     document.getElementById('ytPlayhead').style.left = pct + '%';
   }
 
-  // Chord label
-  let frame = null;
-  for(const f of YTA.timeline){ if(f.time <= t) frame = f; }
-  if(frame) document.getElementById('ytChordDisplay').textContent = ytChordLabel(frame.rootPc, frame.intervals);
+  // Chord label from post-analysis entries (reflects the actual generated MIDI)
+  let curEntry = null;
+  for(const e of YTA.chordEntries){ if(e.startSec <= t) curEntry = e; }
+  if(curEntry) document.getElementById('ytChordDisplay').textContent =
+    ytChordLabel(curEntry.rootPc, curEntry.intervals);
 
   if(!YTA.audioEl.paused){
     AUD_PLAYER.rafId = requestAnimationFrame(audTick);
