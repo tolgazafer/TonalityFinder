@@ -33,6 +33,9 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',-apple-system,Bl
 .sb-search input::placeholder{color:var(--dim);}
 #searchDrop{position:absolute;left:10px;right:10px;top:calc(100% - 2px);background:var(--s1);border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;z-index:50;max-height:260px;overflow-y:auto;display:none;}
 #searchDrop.open{display:block;}
+.sd-group{display:flex;align-items:center;gap:6px;padding:7px 12px;background:linear-gradient(180deg,rgba(123,104,238,.15),rgba(123,104,238,.05));border-bottom:1px solid var(--border);font-size:10px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;color:var(--text);position:sticky;top:0;z-index:1;cursor:pointer;user-select:none;}
+.sd-group:hover{background:linear-gradient(180deg,rgba(123,104,238,.28),rgba(123,104,238,.10));}
+.sd-group::before{content:'▸';color:var(--accent);font-size:11px;}
 .sd-item{padding:8px 12px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border);}
 .sd-item:last-child{border-bottom:none;}
 .sd-item:hover,.sd-item.active{background:var(--s2);}
@@ -109,10 +112,17 @@ select:focus{outline:none;border-color:var(--accent);}
 .mod-key-display{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;gap:12px;}
 .mod-key-name{font-size:24px;font-weight:800;color:var(--text);letter-spacing:-.4px;}
 .mod-chord-sym{font-size:22px;font-weight:700;color:var(--accent);letter-spacing:1px;}
-.mod-controls{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;}
-.mod-controls label{font-size:11px;color:var(--dim);white-space:nowrap;}
-.mod-controls input[type=range]{width:100px;}
-.mod-controls span{font-size:11px;font-weight:700;color:var(--accent);width:30px;}
+.mod-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:12px;}
+.mod-control{background:linear-gradient(180deg,rgba(123,104,238,.12),rgba(0,0,0,0));border:1px solid rgba(123,104,238,.25);border-radius:10px;padding:10px 12px;}
+.mod-control-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;}
+.mod-control-title{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--text);}
+.mod-control-value{font-size:11px;font-weight:800;color:var(--accent);background:rgba(123,104,238,.14);border:1px solid rgba(123,104,238,.25);padding:3px 7px;border-radius:999px;white-space:nowrap;}
+.mod-control-help{font-size:11px;color:var(--dim);line-height:1.35;margin-top:8px;min-height:30px;}
+.mod-controls input[type=range]{width:100%;}
+.analysis-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:12px;}
+.analysis-meta-item{background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;}
+.analysis-meta-label{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:var(--dim);margin-bottom:4px;}
+.analysis-meta-value{font-size:15px;font-weight:800;color:var(--text);}
 .mod-timeline{position:relative;width:100%;height:44px;background:var(--s2);border-radius:6px;overflow:hidden;cursor:pointer;}
 .mod-segment{position:absolute;top:0;bottom:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:9px;font-weight:700;overflow:hidden;border-right:1px solid var(--bg);transition:opacity .15s;user-select:none;cursor:pointer;}
 .mod-segment:hover{opacity:.85;}
@@ -144,7 +154,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;background:var(--acce
 .btn-download{display:block;width:100%;padding:13px;background:linear-gradient(135deg,var(--accent),#5b4de0);border:none;border-radius:var(--r);color:#fff;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:8px;transition:opacity .18s;}
 .btn-download:hover{opacity:.88;}
 .btn-download:disabled{opacity:.35;}
-.btn-download-chord{background:linear-gradient(135deg,var(--green),#009e83);}
+.btn-download-chord{background:linear-gradient(135deg,#3f5878,#5c7ca5);box-shadow:0 10px 22px rgba(48,73,110,.28);}
 .btn-outline{padding:9px 20px;border:1px solid var(--border);border-radius:8px;color:var(--text);background:var(--s2);font-size:13px;font-weight:500;cursor:pointer;font-family:inherit;transition:border-color .2s,background .2s;}
 .btn-outline:hover{border-color:var(--accent);background:var(--s3);}
 .err-card{background:rgba(255,107,138,.1);border:1px solid var(--red);border-radius:var(--r);padding:13px;color:var(--red);font-size:13px;margin-bottom:14px;}
@@ -366,13 +376,33 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;background:var(--acce
           <div class="mod-key-name" id="modKeyName">—</div>
           <div class="mod-chord-sym" id="modChordSym"></div>
         </div>
+        <div class="analysis-meta">
+          <div class="analysis-meta-item">
+            <div class="analysis-meta-label">Tempo</div>
+            <div class="analysis-meta-value" id="analysisTempo">—</div>
+          </div>
+          <div class="analysis-meta-item">
+            <div class="analysis-meta-label">Time Signature</div>
+            <div class="analysis-meta-value" id="analysisTimeSig">—</div>
+          </div>
+        </div>
         <div class="mod-controls">
-          <label for="modWindow">Window</label>
-          <input type="range" id="modWindow" min="2" max="16" step="1" value="4">
-          <span id="modWindowVal">4 bars</span>
-          <label for="modSens" style="margin-left:8px">Sensitivity</label>
-          <input type="range" id="modSens" min="1" max="5" step="1" value="3">
-          <span id="modSensVal">3</span>
+          <div class="mod-control">
+            <div class="mod-control-top">
+              <label class="mod-control-title" for="modWindow">Analysis Window</label>
+              <span class="mod-control-value" id="modWindowVal">4 bars</span>
+            </div>
+            <input type="range" id="modWindow" min="2" max="16" step="1" value="4">
+            <div class="mod-control-help">Larger windows make the key estimate steadier. Smaller windows react faster to local changes.</div>
+          </div>
+          <div class="mod-control">
+            <div class="mod-control-top">
+              <label class="mod-control-title" for="modSens">Change Sensitivity</label>
+              <span class="mod-control-value" id="modSensVal">3</span>
+            </div>
+            <input type="range" id="modSens" min="1" max="5" step="1" value="3">
+            <div class="mod-control-help">Higher values accept faster modulation changes. Lower values require longer consistency before switching.</div>
+          </div>
         </div>
         <div class="mod-timeline" id="modTimeline">
           <div class="mod-cur-key" id="modCurKey"></div>
@@ -394,7 +424,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;background:var(--acce
         </div>
       </div>
 
-      <button class="btn-download btn-download-chord hidden" id="btnDownloadChord" disabled>Download Chord MIDI</button>
+      <button class="btn-download btn-download-chord" id="btnDownloadChord" disabled>Download Chord MIDI</button>
 
     </div><!-- /analysisPanel -->
   </main>
@@ -551,36 +581,51 @@ function getTimeSig(midi){
         return { num:ev.data[0], den:Math.pow(2,ev.data[1]) };
   return { num:4, den:4 };
 }
+function getTempoBpm(midi){
+  let tempo=500000;
+  for(const track of midi.tracks)
+    for(const ev of track)
+      if(ev.kind==='meta'&&ev.metaType===0x51&&ev.data.length>=3){
+        tempo=(ev.data[0]<<16)|(ev.data[1]<<8)|ev.data[2];
+        return Math.round(60000000/tempo);
+      }
+  return Math.round(60000000/tempo);
+}
 function buildNoteList(midi){
   const notes=[];
   for(const track of midi.tracks){
     const active={}; let tick=0;
+    // track program per channel (default 0 = Acoustic Grand Piano)
+    const chProgram={};
     for(const ev of track){
       tick+=ev.delta;
+      if(ev.kind==='programChange') chProgram[ev.channel]=ev.program;
       if(ev.kind==='noteOn'&&ev.velocity>0){
         const k=`${ev.channel},${ev.note}`;
-        (active[k]=active[k]||[]).push({tick,velocity:ev.velocity});
+        (active[k]=active[k]||[]).push({tick,velocity:ev.velocity,program:chProgram[ev.channel]??0});
       } else if(ev.kind==='noteOff'||(ev.kind==='noteOn'&&ev.velocity===0)){
         const k=`${ev.channel},${ev.note}`;
         const q=active[k];
         if(q&&q.length>0){
           const s=q.shift();
-          notes.push({note:ev.note,channel:ev.channel,pc:ev.note%12,startTick:s.tick,duration:Math.max(tick-s.tick,1),velocity:s.velocity});
+          notes.push({note:ev.note,channel:ev.channel,pc:ev.note%12,startTick:s.tick,duration:Math.max(tick-s.tick,1),velocity:s.velocity,program:s.program});
         }
       }
     }
     const tpb=getTPB(midi);
     for(const [k,arr] of Object.entries(active)){
       const [ch,note]=k.split(',').map(Number);
-      for(const s of arr) notes.push({note,channel:ch,pc:note%12,startTick:s.tick,duration:tpb,velocity:s.velocity});
+      for(const s of arr) notes.push({note,channel:ch,pc:note%12,startTick:s.tick,duration:tpb,velocity:s.velocity,program:s.program??chProgram[ch]??0});
     }
   }
   return notes;
 }
 function isGraceNote(n,tpb){ return n.duration<tpb/8; }
+// GM programs 112-127 are Percussive/SFX and contribute no harmonic information
+function isPitchedHarmonic(n){ return n.channel!==9 && (n.program??0)<112; }
 function buildWeightedHistogram(notes,midi,weights){
   const tpb=getTPB(midi);
-  const pitched=notes.filter(n=>n.channel!==9&&!isGraceNote(n,tpb));
+  const pitched=notes.filter(n=>isPitchedHarmonic(n)&&!isGraceNote(n,tpb));
   if(!pitched.length) return new Array(12).fill(0);
   const {num,den}=getTimeSig(midi);
   const tpm=Math.round(tpb*num*4/den);
@@ -649,7 +694,7 @@ function detectModulations(notes,midi,weights,windowBars,sensitivity){
   const tpm=Math.round(tpb*num*4/den);
   const windowTicks=tpm*windowBars;
   const hopTicks=Math.round(tpm*windowBars/2);
-  const pitched=notes.filter(n=>n.channel!==9&&!isGraceNote(n,tpb));
+  const pitched=notes.filter(n=>isPitchedHarmonic(n)&&!isGraceNote(n,tpb));
   if(!pitched.length) return [];
   const lastTick=pitched.reduce((m,n)=>n.startTick+n.duration>m?n.startTick+n.duration:m,0);
   const windowResults=[];
@@ -711,9 +756,23 @@ function chordLabel(rootPc,intervals){
 }
 function bestChordRootAndType(hist,segRoot,scaleIdx){
   if(!hist){ const scale=SCALES[scaleIdx]; const ivl=(scale&&scale.i.length>=5)?[scale.i[0],scale.i[2],scale.i[4]]:[0,4,7]; return {rootPc:segRoot,intervals:ivl}; }
-  let bestScore=-1,bestRootPc=segRoot,bestIvl=[0,4,7];
+  // Pass 1: best triad (indices 0-3 in CHORD_TYPES)
+  let triadScore=-1,triadRootPc=segRoot,triadIvl=[0,4,7];
   for(let root=0;root<12;root++){
-    for(const ivl of CHORD_TYPES){
+    for(let ti=0;ti<4;ti++){
+      const ivl=CHORD_TYPES[ti];
+      const score=ivl.reduce((s,i)=>s+(hist[(root+i)%12]||0),0);
+      if(score>triadScore){ triadScore=score; triadRootPc=root; triadIvl=ivl; }
+    }
+  }
+  // Pass 2: 7th chords (indices 4-8) — only win if the 7th tone is clearly present
+  // Threshold: 7th tone must be >= 0.08 (≈ above-average in a normalised 12-PC histogram)
+  let bestScore=triadScore,bestRootPc=triadRootPc,bestIvl=triadIvl;
+  for(let root=0;root<12;root++){
+    for(let ti=4;ti<CHORD_TYPES.length;ti++){
+      const ivl=CHORD_TYPES[ti];
+      const seventhPc=(root+ivl[3])%12;
+      if((hist[seventhPc]||0)<0.08) continue; // 7th not prominent enough
       const score=ivl.reduce((s,i)=>s+(hist[(root+i)%12]||0),0);
       if(score>bestScore){ bestScore=score; bestRootPc=root; bestIvl=ivl; }
     }
@@ -800,7 +859,7 @@ function injectCCs(midi,segments,notes){
   const tpb=getTPB(midi);
   const tracks=midi.tracks.map(track=>track.filter(ev=>!(ev.kind==='cc'&&(ev.number===85||ev.number===86))));
   const report=[];
-  const pitched=(notes??buildNoteList(midi)).filter(n=>n.channel!==9);
+  const pitched=(notes??buildNoteList(midi)).filter(isPitchedHarmonic);
   const{num,den}=getTimeSig(midi);
   const tpm=Math.round(tpb*num*4/den);
   for(let ti=0;ti<tracks.length;ti++){
@@ -849,18 +908,21 @@ function renameTracks(midi,songName){
 // CHORD-ONLY MIDI
 // ─────────────────────────────────────────────────────────────
 function getMidiLastTick(midi){ let last=0; for(const track of midi.tracks){ let tick=0; for(const ev of track) tick+=ev.delta; last=Math.max(last,tick); } return last; }
+function sanitizeChordTrackEvents(events){
+  return events.filter(ev=>!(ev.kind==='pitchBend'||(ev.kind==='cc'&&ev.number===1)));
+}
 function buildChordOnlyMidi(originalMidi,segments,notes,songName){
   const tpb=getTPB(originalMidi);
   const{num,den}=getTimeSig(originalMidi);
   const tpm=Math.round(tpb*num*4/den);
-  const pitched=(notes??buildNoteList(originalMidi)).filter(n=>n.channel!==9);
+  const pitched=(notes??buildNoteList(originalMidi)).filter(isPitchedHarmonic);
   const lastTick=getMidiLastTick(originalMidi)||(pitched.length?pitched.reduce((m,n)=>n.startTick+n.duration>m?n.startTick+n.duration:m,0):(segments[segments.length-1]?.endTick??0));
   const metaAbs=[];
   for(const track of originalMidi.tracks){ let tick=0; for(const ev of track){ tick+=ev.delta; if(ev.kind==='meta'&&(ev.metaType===0x51||ev.metaType===0x58)) metaAbs.push({...ev,_tick:tick}); } }
   const trackLabel=(songName?songName+' - ':'')+'Chords';
   const nameBytes=Array.from(trackLabel).map(c=>c.charCodeAt(0));
   const nameEv={_tick:0,kind:'meta',metaType:0x03,data:nameBytes};
-  const chordEvs=buildChordTrackEvs(segments,pitched,tpb,tpm,lastTick,0);
+  const chordEvs=sanitizeChordTrackEvents(buildChordTrackEvs(segments,pitched,tpb,tpm,lastTick,0));
   const allAbs=[nameEv,...metaAbs,...chordEvs].sort((a,b)=>a._tick-b._tick||(a._isCC?-1:1));
   let prevTick=0;
   const singleTrack=allAbs.map(ev=>{ const delta=Math.max(0,ev._tick-prevTick); prevTick=ev._tick; const{_tick,_isCC,...rest}=ev; return{...rest,delta}; });
@@ -1306,7 +1368,11 @@ function extractMeta(entry,midi){
   if(drumParts.size) groups.add('percussion');
   const drumList=[...drumParts].sort();
   const tags=[...new Set([...groups,...drumList,(drumList.length?'drums':'')].filter(Boolean))];
-  return{key:entry.root,scale:entry.scaleIndex,bpm,timeSig:`${num}/${den}`,instruments:[...groups],drumParts:drumList,tags};
+  // Extract composer/artist from 'Composer - Title' filename pattern
+  const baseName=(entry.name||'').replace(/\.(mid|midi)$/i,'');
+  const dashIdx=baseName.indexOf(' - ');
+  const composer=dashIdx>0?baseName.slice(0,dashIdx):'';
+  return{key:entry.root,scale:entry.scaleIndex,bpm,timeSig:`${num}/${den}`,instruments:[...groups],drumParts:drumList,tags,composer};
 }
 
 function getChordMidiPath(relPath){
@@ -1445,7 +1511,7 @@ function renderTreeItems(items, parentEl, relPath, depth){
       children.className='tree-children';
       wrap.appendChild(children);
       parentEl.appendChild(wrap);
-      const state={expanded:false,loaded:false,el:children,arrowEl:arrow};
+      const state={expanded:false,loaded:false,el:children,arrowEl:arrow,rowEl:row};
       treeState.set(item.path,state);
       row.addEventListener('click',async()=>{
         state.expanded=!state.expanded;
@@ -1534,6 +1600,42 @@ function renderTreeItems(items, parentEl, relPath, depth){
   }
 }
 
+async function navigateToTreeFolder(folderPath){
+  showFavoritesView(false);
+  closeSearchDrop();
+  document.getElementById('searchInput').value='';
+  // Build ancestor chain and expand each level
+  const parts=folderPath.split('/').filter(Boolean);
+  const ancestors=[];
+  for(let i=1;i<=parts.length;i++) ancestors.push(parts.slice(0,i).join('/'));
+  for(const p of ancestors){
+    const state=treeState.get(p);
+    if(!state) continue;
+    if(!state.expanded){
+      state.expanded=true;
+      state.arrowEl.classList.add('open');
+      state.el.classList.add('open');
+      if(!state.loaded){
+        state.el.innerHTML='<div class="tree-loading">Loading…</div>';
+        try{
+          const sub=await loadDir(p);
+          state.el.innerHTML='';
+          renderTreeItems(sub,state.el,p,p.split('/').length);
+          state.loaded=true;
+        }catch(e){
+          state.el.innerHTML=`<div class="tree-loading" style="color:var(--red)">${e.message}</div>`;
+        }
+      }
+    }
+  }
+  // Scroll to target folder and briefly flash it
+  const target=treeState.get(folderPath);
+  if(target?.rowEl){
+    target.rowEl.scrollIntoView({behavior:'smooth',block:'center'});
+    target.rowEl.style.background='rgba(123,104,238,.25)';
+    setTimeout(()=>{ if(target.rowEl) target.rowEl.style.background=''; },1000);
+  }
+}
 async function initTree(){
   const root=document.getElementById('treeRoot');
   try {
@@ -1563,6 +1665,16 @@ function closeSearchDrop(){
   d.innerHTML=''; d.classList.remove('open');
   searchResults=[]; searchIdx=-1;
 }
+function getSearchDisplayMeta(item){
+  const fileName=(item.name||item.path.split('/').pop()||'').replace(/\.(mid|midi)$/i,'');
+  const pathParts=(item.path||'').split('/').filter(Boolean);
+  const parentFolder=pathParts.length>1?pathParts[pathParts.length-2].trim():'';
+  const dashIdx=fileName.indexOf(' - ');
+  const composerFromName=dashIdx>0?fileName.slice(0,dashIdx).trim():'';
+  const title=dashIdx>0?fileName.slice(dashIdx+3).trim():fileName;
+  const composer=(APP.meta?.[item.path]?.composer||composerFromName||parentFolder||'Unknown Artist').trim();
+  return { composer, title:title||fileName||item.path };
+}
 
 async function doSearch(q){
   q=q.trim();
@@ -1575,24 +1687,33 @@ async function doSearch(q){
     for(const h of serverHits) byPath.set(h.path,h);
   } catch{}
   for(const [path,meta] of Object.entries(APP.meta||{})){
-    const hay=[path, ...(meta.tags||[]), ...(meta.instruments||[]), ...(meta.drumParts||[])].join(' ').toLowerCase();
+    const hay=[path, meta.composer||'', ...(meta.tags||[]), ...(meta.instruments||[]), ...(meta.drumParts||[])].join(' ').toLowerCase();
     if(terms.every(t=>hay.includes(t))){
       byPath.set(path,{path,name:path.split('/').pop()});
     }
   }
-  searchResults=[...byPath.values()];
+  searchResults=[...byPath.values()].map(item=>({ ...item, ...getSearchDisplayMeta(item) }));
+  searchResults.sort((a,b)=>a.composer.localeCompare(b.composer,undefined,{sensitivity:'base'})||a.title.localeCompare(b.title,undefined,{numeric:true,sensitivity:'base'}));
   const drop=document.getElementById('searchDrop');
   drop.innerHTML='';
   if(!searchResults.length){ closeSearchDrop(); return; }
   searchIdx=-1;
+  let currentComposer='';
   searchResults.slice(0,20).forEach((item,i)=>{
+    if(item.composer!==currentComposer){
+      currentComposer=item.composer;
+      const folderPath=item.path.split('/').slice(0,-1).join('/');
+      const group=document.createElement('div');
+      group.className='sd-group';
+      group.textContent=currentComposer;
+      group.title='Jump to '+currentComposer+' in library';
+      group.addEventListener('mousedown',e=>{ e.preventDefault(); navigateToTreeFolder(folderPath); });
+      drop.appendChild(group);
+    }
     const li=document.createElement('div');
     li.className='sd-item';
     li.dataset.idx=i;
-    const parts=item.path.split('/');
-    const displayName=item.name.replace(/\.(mid|midi)$/i,'');
-    const artist=parts.length>2?parts[parts.length-2]:'';
-    li.innerHTML=`<div class="sd-name">${displayName}</div><div class="sd-path">${artist?artist+' · ':''} ${parts[0]}</div>`;
+    li.innerHTML=`<div class="sd-name">${item.title}</div><div class="sd-path">${item.composer}</div>`;
     li.addEventListener('mousedown',e=>{ e.preventDefault(); openSearchResult(item); });
     drop.appendChild(li);
   });
@@ -1736,9 +1857,15 @@ function renderAnalysis(entry){
   if(favWrap){ favWrap.innerHTML=''; if(APP.filePath) favWrap.appendChild(makeFavoriteButton(APP.filePath)); }
   const noteCount=entry.notes?entry.notes.filter(n=>n.channel!==9).length:0;
   const chLabel=APP.selectedChannel!==null?` · Ch ${APP.selectedChannel+1}`:'';
+  const bpm=entry.midi?getTempoBpm(entry.midi):null;
+  const ts=entry.midi?getTimeSig(entry.midi):null;
   document.getElementById('panelInfo').textContent=entry.midi
     ?`Format ${entry.midi.format} · ${entry.midi.numTracks} track${entry.midi.numTracks!==1?'s':''} · ${noteCount.toLocaleString()} note events${chLabel}`
     :'';
+  const tempoEl=document.getElementById('analysisTempo');
+  const tsEl=document.getElementById('analysisTimeSig');
+  if(tempoEl) tempoEl.textContent=bpm?`${bpm} BPM`:'—';
+  if(tsEl) tsEl.textContent=ts?`${ts.num}/${ts.den}`:'—';
   const err=document.getElementById('panelErr');
   if(entry.error){ err.textContent=entry.error; err.classList.remove('hidden'); }
   else err.classList.add('hidden');
@@ -1885,6 +2012,10 @@ function stopPlayer(){
   document.getElementById('pbFill').style.width='0%';
   if(APP.entry&&APP.entry.histogram) refreshPiano(APP.entry.histogram,APP.entry.root,APP.entry.scaleIndex,APP.entry.noteFreqMap,new Set());
 }
+function getChordLabelMinDuration(){
+  // Higher sensitivity should allow faster chord-label changes.
+  return [0.75,0.55,0.35,0.24,0.16][Math.max(0,Math.min(4,(APP.modSens||3)-1))];
+}
 async function startPlayer(fromSec=0){
   const entry=APP.entry;
   if(!entry||!entry.midi) return;
@@ -1894,12 +2025,18 @@ async function startPlayer(fromSec=0){
   APP.player.setGain(APP.midiVol);
   if(APP.player.setReverb) APP.player.setReverb(APP.reverb);
   if(APP.player.setCompressor) APP.player.setCompressor(APP.comp);
+  let _lastChordLabel='',_lastChordSec=-999;
   APP.player.onProgress=(sec,dur)=>{
     if(!dur) return;
+    const chordMinDur=getChordLabelMinDuration();
     document.getElementById('pbFill').style.width=(sec/dur*100).toFixed(2)+'%';
     document.getElementById('pbTime').textContent=`${fmt(sec)} / ${fmt(dur)}`;
-    APP.activeNotes=APP.player.getNotesAtSec(sec);
-    refreshPiano(entry.histogram,entry.root,entry.scaleIndex,entry.noteFreqMap,APP.activeNotes);
+    // Gather notes from a small window around current position for stability
+    const WIN=0.15;
+    const notesNow=APP.player.getNotesAtSec(sec);
+    const notesEarly=APP.player.getNotesAtSec(Math.max(0,sec-WIN));
+    APP.activeNotes=new Set([...notesNow,...notesEarly]);
+    refreshPiano(entry.histogram,entry.root,entry.scaleIndex,entry.noteFreqMap,notesNow);
     updateModPlayhead(sec,dur);
     const symEl=document.getElementById('modChordSym');
     if(symEl&&APP.activeNotes.size>=2){
@@ -1908,8 +2045,11 @@ async function startPlayer(fromSec=0){
       const sum=h.reduce((a,b)=>a+b,0);
       const norm=sum>0?h.map(v=>v/sum):null;
       const{rootPc,intervals}=bestChordRootAndType(norm,entry.root,entry.scaleIndex);
-      symEl.textContent=chordLabel(rootPc,intervals);
-    } else if(symEl) symEl.textContent='';
+      const label=chordLabel(rootPc,intervals);
+      if(label!==_lastChordLabel&&sec-_lastChordSec>=chordMinDur){
+        _lastChordLabel=label; _lastChordSec=sec; symEl.textContent=label;
+      }
+    } else if(symEl&&sec-_lastChordSec>=chordMinDur){ symEl.textContent=''; _lastChordLabel=''; _lastChordSec=sec; }
   };
   APP.player.onEnd=()=>{
     APP.paused=false; APP.pausedAt=0; APP.activeNotes=new Set();
@@ -1997,11 +2137,39 @@ function initDropdowns(){
   });
 }
 
+// Regenerate chord MIDI files for all favorites in the background on startup
+async function regenerateFavoriteChords(){
+  const paths=[...APP.favorites];
+  if(!paths.length) return;
+  for(const p of paths){
+    try{
+      const mr=await fetch('/api/midi?p='+encodeURIComponent(p));
+      if(!mr.ok) continue;
+      const buf=await mr.arrayBuffer();
+      const midi=new MIDIParser(buf).parse();
+      const notes=buildNoteList(midi);
+      const hist=buildWeightedHistogram(notes,midi,APP.weights);
+      if(!hist.reduce((a,b)=>a+b,0)) continue;
+      const cands=detectBest(hist);
+      const root=cands[0].root,scaleIndex=cands[0].scaleIndex;
+      const segs=[{startTick:0,endTick:getMidiLastTick(midi),root,scaleIndex}];
+      const songName=p.replace(/^.*[\\/]/,'').replace(/\.(mid|midi)$/i,'');
+      const chordMidi=buildChordOnlyMidi(midi,segs,notes,songName);
+      const chordBytes=new MIDISerializer().serialize(chordMidi);
+      await fetch('/api/save-chord?p='+encodeURIComponent(p),{method:'POST',body:chordBytes,headers:{'Content-Type':'audio/midi'}}).catch(()=>{});
+      // Refresh chord player if this file is currently open
+      if(p===APP.filePath) tryLoadChordMidi(p);
+    }catch{}
+  }
+}
+
 document.addEventListener('DOMContentLoaded',()=>{
   loadFavorites();
   initDropdowns();
   initGM();
   initTree();
+  // Kick off background chord regeneration for favorites after tree is ready
+  setTimeout(regenerateFavoriteChords, 500);
   document.getElementById('btnShowFav').addEventListener('click',()=>{ renderFavoritesList(); showFavoritesView(true); });
   document.getElementById('btnShowTree').addEventListener('click',()=>showFavoritesView(false));
 
@@ -2191,7 +2359,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           const buf=await mr.arrayBuffer();
           const midi=new MIDIParser(buf).parse();
           const notes=buildNoteList(midi);
-          const pitchedNotes=notes.filter(n=>n.channel!==9);
+          const pitchedNotes=notes.filter(isPitchedHarmonic);
           const isDrumOnly=pitchedNotes.length===0;
           let fakeEntry;
           if(!isDrumOnly){
