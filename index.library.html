@@ -671,12 +671,26 @@ function scoreHist(hist,root,si){
   return { score:0.70*liftScore+0.30*rootProminence, coverage };
 }
 const SCALE_BONUS=(()=>{ const b=new Array(SCALES.length).fill(0); b[0]=0.12;b[1]=0.12;b[2]=0.06;b[3]=0.06;b[4]=0.06;b[5]=0.06;b[6]=0.06; return b; })();
-function detectBest(hist){
+// Monophonic bonus: all 7 natural modes treated equally — no extra weight for Major/Minor.
+const SCALE_BONUS_MONO=(()=>{ const b=new Array(SCALES.length).fill(0); for(let i=0;i<7;i++) b[i]=0.10; return b; })();
+// Returns true when notes form a single melodic line (no significant simultaneous notes).
+function isMonophonic(notes){
+  const pitched=notes.filter(n=>n.channel!==9);
+  if(pitched.length<2) return true;
+  const sorted=pitched.slice().sort((a,b)=>a.startTick-b.startTick);
+  let polyPairs=0;
+  for(let i=0;i+1<sorted.length;i++){
+    const a=sorted[i],b=sorted[i+1];
+    if(b.startTick<a.startTick+a.duration*0.9) polyPairs++;
+  }
+  return polyPairs/(sorted.length-1)<0.05;
+}
+function detectBest(hist,bonus=SCALE_BONUS){
   const all=[];
   for(let root=0;root<12;root++)
     for(let si=0;si<SCALES.length;si++){
       const {score,coverage}=scoreHist(hist,root,si);
-      all.push({root,scaleIndex:si,score:score+SCALE_BONUS[si],coverage});
+      all.push({root,scaleIndex:si,score:score+bonus[si],coverage});
     }
   all.sort((a,b)=>b.score-a.score);
   return all;
@@ -703,6 +717,54 @@ function sameNoteSet(root1,scale1,root2,scale2){
   const pcs1=new Set(scale1.i.map(ivl=>(root1+ivl)%12));
   const pcs2=scale2.i.map(ivl=>(root2+ivl)%12);
   return pcs2.every(pc=>pcs1.has(pc));
+}
+function buildRangePitchClassSet(pitched,startTick,endTick){
+  const pcs=new Set();
+  for(const n of pitched){
+    const noteEnd=n.startTick+n.duration;
+    if(n.startTick>=endTick||noteEnd<=startTick) continue;
+    pcs.add(n.note%12);
+  }
+  return pcs;
+}
+function samePitchClassSet(a,b){
+  if(!a||!b||a.size!==b.size) return false;
+  for(const pc of a) if(!b.has(pc)) return false;
+  return true;
+}
+function noteSetOverlapCount(root1,scale1,root2,scale2){
+  if(!scale1||!scale2) return 0;
+  const pcs1=new Set(scale1.i.map(iv=>(root1+iv)%12));
+  const pcs2=scale2.i.map(iv=>(root2+iv)%12);
+  let overlap=0;
+  for(const pc of pcs2) if(pcs1.has(pc)) overlap++;
+  return overlap;
+}
+function chooseCascadeRegionKey(segNotes,tpb,tpm,weights,globalBest,TONAL_SCALE_SET,bonus=SCALE_BONUS){
+  const hist=buildWeightedHistogramFromNotes(segNotes,tpb,tpm,weights);
+  const allCandidates=detectBest(hist,bonus);
+  const tonalCandidates=allCandidates.filter(c=>TONAL_SCALE_SET.has(c.scaleIndex));
+  const pool=tonalCandidates.length?tonalCandidates:allCandidates;
+  const sameRootCandidates=pool.filter(c=>
+    c.root===globalBest.root&&
+    c.scaleIndex!==globalBest.scaleIndex&&
+    !sameNoteSet(c.root,SCALES[c.scaleIndex],globalBest.root,SCALES[globalBest.scaleIndex])
+  );
+  sameRootCandidates.sort((a,b)=>{
+    const oa=noteSetOverlapCount(a.root,SCALES[a.scaleIndex],globalBest.root,SCALES[globalBest.scaleIndex]);
+    const ob=noteSetOverlapCount(b.root,SCALES[b.scaleIndex],globalBest.root,SCALES[globalBest.scaleIndex]);
+    if(ob!==oa) return ob-oa;
+    return b.score-a.score;
+  });
+  const sameRootDifferentScale=sameRootCandidates[0];
+  if(sameRootDifferentScale) return {root:sameRootDifferentScale.root,scaleIndex:sameRootDifferentScale.scaleIndex};
+  const newKeyCenter=pool.find(c=>
+    c.root!==globalBest.root&&
+    !sameNoteSet(c.root,SCALES[c.scaleIndex],globalBest.root,SCALES[globalBest.scaleIndex])
+  );
+  return newKeyCenter
+    ? {root:newKeyCenter.root,scaleIndex:newKeyCenter.scaleIndex}
+    : {root:globalBest.root,scaleIndex:globalBest.scaleIndex};
 }
 function buildWeightedHistogramFromNotes(notes,tpb,tpm,weights){
   const hCount=new Array(12).fill(0),hDur=new Array(12).fill(0);
@@ -739,7 +801,7 @@ function findPivotTick(pitched,prevSeg,curSeg,tpb){
   }
   return boundary; // direct modulation — no preparation found
 }
-function detectModulationsHierarchical(notes,midi,weights){
+function detectModulationsHierarchical(notes,midi,weights,bonus=SCALE_BONUS){
   const tpb=getTPB(midi);
   const{num,den}=getTimeSig(midi);
   const tpm=Math.round(tpb*num*4/den);
@@ -752,7 +814,7 @@ function detectModulationsHierarchical(notes,midi,weights){
   if(!pitched.length) return [];
   const lastTick=pitched.reduce((m,n)=>Math.max(m,n.startTick+n.duration),0);
   const globalHist=buildWeightedHistogramFromNotes(pitched,tpb,tpm,weights);
-  const globalBest=chooseGlobalBest(detectBest(globalHist),globalHist);
+  const globalBest=chooseGlobalBest(detectBest(globalHist,bonus),globalHist);
   const globalPCs=new Set(SCALES[globalBest.scaleIndex].i.map(iv=>(globalBest.root+iv)%12));
   // For chromatic detection, use the natural-scale equivalent of raised-7th scales
   // (Harmonic Minor→Minor, Harmonic Major→Major) so the raised 7th is still detected
@@ -782,8 +844,8 @@ function detectModulationsHierarchical(notes,midi,weights){
     }
     // a) Same-root mode check — unconditional, score-driven only
     const barHist=buildWeightedHistogramFromNotes(barNotes,tpb,tpm,weights);
-    const globalBarScore=scoreHist(barHist,globalBest.root,globalBest.scaleIndex).score+SCALE_BONUS[globalBest.scaleIndex];
-    const bestSameRootMode=detectBest(barHist).find(c=>
+    const globalBarScore=scoreHist(barHist,globalBest.root,globalBest.scaleIndex).score+bonus[globalBest.scaleIndex];
+    const bestSameRootMode=detectBest(barHist,bonus).find(c=>
       c.root===globalBest.root&&c.scaleIndex!==globalBest.scaleIndex&&TONAL_SCALE_SET.has(c.scaleIndex)
     );
     barModeOverride.push(
@@ -820,7 +882,7 @@ function detectModulationsHierarchical(notes,midi,weights){
     const runStart_t=runStart*tpm, runEnd_t=(runEnd+1)*tpm;
     const runNotes=pitched.filter(n=>n.startTick>=runStart_t&&n.startTick<runEnd_t);
     const hist=buildWeightedHistogramFromNotes(runNotes,tpb,tpm,weights);
-    const allCandidates=detectBest(hist);
+    const allCandidates=detectBest(hist,bonus);
     const tonalCandidates=allCandidates.filter(c=>TONAL_SCALE_SET.has(c.scaleIndex));
     const best=(tonalCandidates[0]||allCandidates[0]);
     let chosen=best;
@@ -864,12 +926,37 @@ function detectModulationsHierarchical(notes,midi,weights){
   merged[0].startTick=0;
   merged[merged.length-1].endTick=lastTick;
 
-  // Back-shift modulation boundaries to pivot / preparation chord
-  for(let i=1;i<merged.length;i++){
-    const prev=merged[i-1],cur=merged[i];
-    const pivot=findPivotTick(pitched,prev,cur,tpb);
-    if(pivot>prev.startTick&&pivot<cur.endTick){ prev.endTick=pivot; cur.startTick=pivot; }
+  // Cascade refinement for divided regions:
+  // 1) If a region maps to the same scale-note set as the main key, keep global.
+  // 2) If its note combination differs from neighbours, treat as modulation.
+  //    Prefer same-root scale change first; otherwise choose a new key center.
+  for(let i=0;i<merged.length;i++){
+    const seg=merged[i];
+    if(sameNoteSet(seg.root,SCALES[seg.scaleIndex],globalBest.root,SCALES[globalBest.scaleIndex])){
+      seg.root=globalBest.root;
+      seg.scaleIndex=globalBest.scaleIndex;
+      continue;
+    }
+
+    const segPcs=buildRangePitchClassSet(pitched,seg.startTick,seg.endTick);
+    const prevPcs=i>0?buildRangePitchClassSet(pitched,merged[i-1].startTick,merged[i-1].endTick):null;
+    const nextPcs=i+1<merged.length?buildRangePitchClassSet(pitched,merged[i+1].startTick,merged[i+1].endTick):null;
+    const differsPrev=prevPcs?!samePitchClassSet(segPcs,prevPcs):false;
+    const differsNext=nextPcs?!samePitchClassSet(segPcs,nextPcs):false;
+    const differsFromNeighbours=(prevPcs&&nextPcs)?(differsPrev&&differsNext):(prevPcs?differsPrev:(nextPcs?differsNext:false));
+    if(!differsFromNeighbours) continue;
+
+    const segNotes=pitched.filter(n=>n.startTick<seg.endTick&&n.startTick+n.duration>seg.startTick);
+    if(segNotes.length<2) continue;
+
+    const chosen=chooseCascadeRegionKey(segNotes,tpb,tpm,weights,globalBest,TONAL_SCALE_SET,bonus);
+    seg.root=chosen.root;
+    seg.scaleIndex=chosen.scaleIndex;
   }
+  merged=mergeByLabel(merged);
+  merged[0].startTick=0;
+  merged[merged.length-1].endTick=lastTick;
+
   return merged;
 }
 const SEG_COLORS=['#7b68ee','#00cba9','#ff6b8a','#f4a04a','#4ab8f4','#c084fc','#34d399','#f87171','#fbbf24','#60a5fa'];
@@ -2075,11 +2162,12 @@ function analyzeEntry(entry){
   entry.histogram=hist;
   const total=hist.reduce((a,b)=>a+b,0);
   if(!total){ entry.error='No pitched note events found'; return; }
-  const cands=detectBest(hist);
+  const bonus=isMonophonic(entry.notes)?SCALE_BONUS_MONO:SCALE_BONUS;
+  const cands=detectBest(hist,bonus);
   entry.candidates=cands;
   const best=chooseGlobalBest(cands,hist)||cands[0];
   entry.root=best.root; entry.scaleIndex=best.scaleIndex;
-  entry.segments=detectModulationsHierarchical(entry.notes,entry.midi,APP.weights);
+  entry.segments=detectModulationsHierarchical(entry.notes,entry.midi,APP.weights,bonus);
   if(entry.segments.length===1){ entry.segments[0].root=entry.root; entry.segments[0].scaleIndex=entry.scaleIndex; }
 }
 
@@ -2441,7 +2529,8 @@ async function regenerateFavoriteChords(){
       const notes=buildNoteList(midi);
       const hist=buildWeightedHistogram(notes,midi,APP.weights);
       if(!hist.reduce((a,b)=>a+b,0)) continue;
-      const cands=detectBest(hist);
+      const bonus=isMonophonic(notes)?SCALE_BONUS_MONO:SCALE_BONUS;
+      const cands=detectBest(hist,bonus);
       const root=cands[0].root,scaleIndex=cands[0].scaleIndex;
       const segs=[{startTick:0,endTick:getMidiLastTick(midi),root,scaleIndex}];
       const songName=p.replace(/^.*[\\/]/,'').replace(/\.(mid|midi)$/i,'');
@@ -2638,7 +2727,8 @@ document.addEventListener('DOMContentLoaded',()=>{
           if(!isDrumOnly){
             const hist=buildWeightedHistogram(notes,midi,APP.weights);
             if(!hist.reduce((a,b)=>a+b,0)){ done++; skipped++; continue; }
-            const cands=detectBest(hist);
+            const bonus=isMonophonic(notes)?SCALE_BONUS_MONO:SCALE_BONUS;
+            const cands=detectBest(hist,bonus);
             const root=cands[0].root, scaleIndex=cands[0].scaleIndex;
             const segs=[{startTick:0,endTick:getMidiLastTick(midi),root,scaleIndex}];
             fakeEntry={name:item.name,midi,notes,root,scaleIndex,segments:segs,histogram:hist,error:null};
