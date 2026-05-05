@@ -76,6 +76,10 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',-apple-system,Bl
 .fi-icon{width:36px;height:36px;border-radius:8px;flex-shrink:0;background:linear-gradient(135deg,var(--accent),#5b4de0);display:flex;align-items:center;justify-content:center;font-size:17px;}
 .fi-name-text{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .fi-info-text{font-size:11px;color:var(--dim);margin-top:2px;}
+.fi-meta{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;min-width:230px;max-width:320px;flex-shrink:0;}
+.fi-meta .analysis-meta-item{padding:8px 10px;background:var(--s2);}
+.fi-meta .analysis-meta-label{font-size:9px;margin-bottom:3px;}
+.fi-meta .analysis-meta-value{font-size:13px;}
 
 /* PLAYBACK */
 .playback{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:13px 14px;margin-bottom:14px;}
@@ -110,8 +114,7 @@ select:focus{outline:none;border-color:var(--accent);}
 
 /* MODULATIONS */
 .mod-key-display{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;gap:12px;}
-.mod-key-name{font-size:24px;font-weight:800;color:var(--text);letter-spacing:-.4px;}
-.mod-chord-sym{font-size:22px;font-weight:700;color:var(--accent);letter-spacing:1px;}
+.mod-key-name,.mod-chord-sym{font-size:24px;font-weight:800;color:var(--text);letter-spacing:-.4px;}
 .mod-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:12px;}
 .mod-control{background:linear-gradient(180deg,rgba(123,104,238,.12),rgba(0,0,0,0));border:1px solid rgba(123,104,238,.25);border-radius:10px;padding:10px 12px;}
 .mod-control-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;}
@@ -178,6 +181,12 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;background:var(--acce
 .mix-label{font-size:11px;color:var(--dim);width:36px;flex-shrink:0;}
 .mix-vol{flex:1;}
 .mix-val{font-size:10px;color:var(--dim);width:30px;text-align:right;flex-shrink:0;}
+.mix-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;}
+.mix-card-head .card-hdr{margin-bottom:0;}
+.mix-min-btn{width:24px;height:24px;border-radius:6px;border:1px solid var(--border);background:var(--s2);color:var(--dim);font-size:14px;line-height:1;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;}
+.mix-min-btn:hover{border-color:var(--accent);color:var(--text);}
+#mixCard.minimized .mix-row{display:none;}
+#mixCard.minimized .mix-row:first-of-type{display:flex;}
 .btn-mute{width:22px;height:22px;border-radius:4px;flex-shrink:0;background:var(--s2);border:1px solid var(--border);color:var(--dim);font-size:9px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .15s,border-color .15s,color .15s;padding:0;}
 .btn-mute.muted{background:rgba(255,107,138,.15);border-color:var(--red);color:var(--red);}
 
@@ -311,6 +320,16 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;background:var(--acce
           <div class="fi-name-text" id="panelName"></div>
           <div class="fi-info-text" id="panelInfo"></div>
         </div>
+        <div class="fi-meta">
+          <div class="analysis-meta-item">
+            <div class="analysis-meta-label">Tempo</div>
+            <div class="analysis-meta-value" id="analysisTempo">—</div>
+          </div>
+          <div class="analysis-meta-item">
+            <div class="analysis-meta-label">Time Signature</div>
+            <div class="analysis-meta-value" id="analysisTimeSig">—</div>
+          </div>
+        </div>
         <div id="idCardFavWrap" style="flex-shrink:0"></div>
       </div>
 
@@ -335,8 +354,11 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;background:var(--acce
           </div>
           <div class="pb-time" id="pbTime">0:00 / 0:00</div>
         </div>
-        <div class="card" style="margin-top:10px;margin-bottom:0;padding:12px;">
-          <div class="card-hdr" style="margin-bottom:10px;">Mix</div>
+        <div class="card" id="mixCard" style="margin-top:10px;margin-bottom:0;padding:12px;">
+          <div class="mix-card-head">
+            <div class="card-hdr">Mix</div>
+            <button class="mix-min-btn" id="btnMixMin" type="button" title="Minimize mixer" aria-label="Toggle mixer" aria-expanded="true">-</button>
+          </div>
           <div class="mix-row">
             <span class="mix-label">Main</span>
             <input type="range" class="mix-vol" id="pbMidiVol" min="0" max="100" value="80">
@@ -373,32 +395,12 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;background:var(--acce
       <div class="card" id="modCard">
         <div class="card-hdr">Key / Scale Modulations</div>
         <div class="mod-key-display">
-          <div class="mod-key-name" id="modKeyName">—</div>
           <div class="mod-chord-sym" id="modChordSym"></div>
-        </div>
-        <div class="analysis-meta">
-          <div class="analysis-meta-item">
-            <div class="analysis-meta-label">Tempo</div>
-            <div class="analysis-meta-value" id="analysisTempo">—</div>
-          </div>
-          <div class="analysis-meta-item">
-            <div class="analysis-meta-label">Time Signature</div>
-            <div class="analysis-meta-value" id="analysisTimeSig">—</div>
-          </div>
+          <div class="mod-key-name" id="modKeyName">—</div>
         </div>
         <div class="mod-timeline" id="modTimeline">
           <div class="mod-cur-key" id="modCurKey"></div>
           <div class="mod-playhead hidden" id="modPlayhead"></div>
-        </div>
-        <div class="sel-row" style="margin-top:14px">
-          <div class="sel-group">
-            <label for="keySelect">Root Note</label>
-            <select id="keySelect"></select>
-          </div>
-          <div class="sel-group">
-            <label for="scaleSelect">Scale</label>
-            <select id="scaleSelect"></select>
-          </div>
         </div>
         <div class="card-hdr" style="margin-top:14px;">Piano Keyboard</div>
         <div class="piano-wrap">
@@ -671,26 +673,12 @@ function scoreHist(hist,root,si){
   return { score:0.70*liftScore+0.30*rootProminence, coverage };
 }
 const SCALE_BONUS=(()=>{ const b=new Array(SCALES.length).fill(0); b[0]=0.12;b[1]=0.12;b[2]=0.06;b[3]=0.06;b[4]=0.06;b[5]=0.06;b[6]=0.06; return b; })();
-// Monophonic bonus: all 7 natural modes treated equally — no extra weight for Major/Minor.
-const SCALE_BONUS_MONO=(()=>{ const b=new Array(SCALES.length).fill(0); for(let i=0;i<7;i++) b[i]=0.10; return b; })();
-// Returns true when notes form a single melodic line (no significant simultaneous notes).
-function isMonophonic(notes){
-  const pitched=notes.filter(n=>n.channel!==9);
-  if(pitched.length<2) return true;
-  const sorted=pitched.slice().sort((a,b)=>a.startTick-b.startTick);
-  let polyPairs=0;
-  for(let i=0;i+1<sorted.length;i++){
-    const a=sorted[i],b=sorted[i+1];
-    if(b.startTick<a.startTick+a.duration*0.9) polyPairs++;
-  }
-  return polyPairs/(sorted.length-1)<0.05;
-}
-function detectBest(hist,bonus=SCALE_BONUS){
+function detectBest(hist){
   const all=[];
   for(let root=0;root<12;root++)
     for(let si=0;si<SCALES.length;si++){
       const {score,coverage}=scoreHist(hist,root,si);
-      all.push({root,scaleIndex:si,score:score+bonus[si],coverage});
+      all.push({root,scaleIndex:si,score:score+SCALE_BONUS[si],coverage});
     }
   all.sort((a,b)=>b.score-a.score);
   return all;
@@ -718,53 +706,12 @@ function sameNoteSet(root1,scale1,root2,scale2){
   const pcs2=scale2.i.map(ivl=>(root2+ivl)%12);
   return pcs2.every(pc=>pcs1.has(pc));
 }
-function buildRangePitchClassSet(pitched,startTick,endTick){
-  const pcs=new Set();
-  for(const n of pitched){
-    const noteEnd=n.startTick+n.duration;
-    if(n.startTick>=endTick||noteEnd<=startTick) continue;
-    pcs.add(n.note%12);
-  }
-  return pcs;
-}
-function samePitchClassSet(a,b){
-  if(!a||!b||a.size!==b.size) return false;
-  for(const pc of a) if(!b.has(pc)) return false;
-  return true;
-}
-function noteSetOverlapCount(root1,scale1,root2,scale2){
-  if(!scale1||!scale2) return 0;
-  const pcs1=new Set(scale1.i.map(iv=>(root1+iv)%12));
-  const pcs2=scale2.i.map(iv=>(root2+iv)%12);
+function overlapCountSameRoot(scaleA,scaleB){
+  if(!scaleA||!scaleB) return 0;
+  const setA=new Set(scaleA.i);
   let overlap=0;
-  for(const pc of pcs2) if(pcs1.has(pc)) overlap++;
+  for(const iv of scaleB.i) if(setA.has(iv)) overlap++;
   return overlap;
-}
-function chooseCascadeRegionKey(segNotes,tpb,tpm,weights,globalBest,TONAL_SCALE_SET,bonus=SCALE_BONUS){
-  const hist=buildWeightedHistogramFromNotes(segNotes,tpb,tpm,weights);
-  const allCandidates=detectBest(hist,bonus);
-  const tonalCandidates=allCandidates.filter(c=>TONAL_SCALE_SET.has(c.scaleIndex));
-  const pool=tonalCandidates.length?tonalCandidates:allCandidates;
-  const sameRootCandidates=pool.filter(c=>
-    c.root===globalBest.root&&
-    c.scaleIndex!==globalBest.scaleIndex&&
-    !sameNoteSet(c.root,SCALES[c.scaleIndex],globalBest.root,SCALES[globalBest.scaleIndex])
-  );
-  sameRootCandidates.sort((a,b)=>{
-    const oa=noteSetOverlapCount(a.root,SCALES[a.scaleIndex],globalBest.root,SCALES[globalBest.scaleIndex]);
-    const ob=noteSetOverlapCount(b.root,SCALES[b.scaleIndex],globalBest.root,SCALES[globalBest.scaleIndex]);
-    if(ob!==oa) return ob-oa;
-    return b.score-a.score;
-  });
-  const sameRootDifferentScale=sameRootCandidates[0];
-  if(sameRootDifferentScale) return {root:sameRootDifferentScale.root,scaleIndex:sameRootDifferentScale.scaleIndex};
-  const newKeyCenter=pool.find(c=>
-    c.root!==globalBest.root&&
-    !sameNoteSet(c.root,SCALES[c.scaleIndex],globalBest.root,SCALES[globalBest.scaleIndex])
-  );
-  return newKeyCenter
-    ? {root:newKeyCenter.root,scaleIndex:newKeyCenter.scaleIndex}
-    : {root:globalBest.root,scaleIndex:globalBest.scaleIndex};
 }
 function buildWeightedHistogramFromNotes(notes,tpb,tpm,weights){
   const hCount=new Array(12).fill(0),hDur=new Array(12).fill(0);
@@ -801,7 +748,7 @@ function findPivotTick(pitched,prevSeg,curSeg,tpb){
   }
   return boundary; // direct modulation — no preparation found
 }
-function detectModulationsHierarchical(notes,midi,weights,bonus=SCALE_BONUS){
+function detectModulationsHierarchical(notes,midi,weights){
   const tpb=getTPB(midi);
   const{num,den}=getTimeSig(midi);
   const tpm=Math.round(tpb*num*4/den);
@@ -814,7 +761,7 @@ function detectModulationsHierarchical(notes,midi,weights,bonus=SCALE_BONUS){
   if(!pitched.length) return [];
   const lastTick=pitched.reduce((m,n)=>Math.max(m,n.startTick+n.duration),0);
   const globalHist=buildWeightedHistogramFromNotes(pitched,tpb,tpm,weights);
-  const globalBest=chooseGlobalBest(detectBest(globalHist,bonus),globalHist);
+  const globalBest=chooseGlobalBest(detectBest(globalHist),globalHist);
   const globalPCs=new Set(SCALES[globalBest.scaleIndex].i.map(iv=>(globalBest.root+iv)%12));
   // For chromatic detection, use the natural-scale equivalent of raised-7th scales
   // (Harmonic Minor→Minor, Harmonic Major→Major) so the raised 7th is still detected
@@ -836,6 +783,7 @@ function detectModulationsHierarchical(notes,midi,weights,bonus=SCALE_BONUS){
   const barModeOverride=[]; // {root,scaleIndex} when a same-root mode scores clearly better; else null
   const minChromaticFrac=0.30;
   const minModeSwitchMargin=0.08; // score margin to declare a same-root mode change
+  const sameRootTieMargin=0.06;   // if same-root modes are close, prefer mode closest to global note set
   for(let b=0;b<totalBars;b++){
     const bStart=b*tpm, bEnd=bStart+tpm;
     const barNotes=pitched.filter(n=>n.startTick>=bStart&&n.startTick<bEnd);
@@ -844,10 +792,45 @@ function detectModulationsHierarchical(notes,midi,weights,bonus=SCALE_BONUS){
     }
     // a) Same-root mode check — unconditional, score-driven only
     const barHist=buildWeightedHistogramFromNotes(barNotes,tpb,tpm,weights);
-    const globalBarScore=scoreHist(barHist,globalBest.root,globalBest.scaleIndex).score+bonus[globalBest.scaleIndex];
-    const bestSameRootMode=detectBest(barHist,bonus).find(c=>
+    const globalBarScore=scoreHist(barHist,globalBest.root,globalBest.scaleIndex).score+SCALE_BONUS[globalBest.scaleIndex];
+    const sameRootModes=detectBest(barHist).filter(c=>
       c.root===globalBest.root&&c.scaleIndex!==globalBest.scaleIndex&&TONAL_SCALE_SET.has(c.scaleIndex)
     );
+    let bestSameRootMode=sameRootModes[0]||null;
+    if(bestSameRootMode&&sameRootModes.length>1){
+      // Prefer modes that preserve more of the global key note set.
+      const overlapBoost=0.12;
+      const globalLen=Math.max(1,SCALES[globalBest.scaleIndex].i.length);
+      const ranked=sameRootModes.slice().sort((a,b)=>{
+        const oa=overlapCountSameRoot(SCALES[a.scaleIndex],SCALES[globalBest.scaleIndex])/globalLen;
+        const ob=overlapCountSameRoot(SCALES[b.scaleIndex],SCALES[globalBest.scaleIndex])/globalLen;
+        const sa=a.score+oa*overlapBoost;
+        const sb=b.score+ob*overlapBoost;
+        if(sb!==sa) return sb-sa;
+        return b.score-a.score;
+      });
+      bestSameRootMode=ranked[0];
+
+      // Legacy behavior: in minor contexts, prefer Harmonic Minor over Major when close.
+      if(globalBest.scaleIndex===1){
+        const harmonicMinor=sameRootModes.find(c=>c.scaleIndex===13);
+        const major=sameRootModes.find(c=>c.scaleIndex===0);
+        if(harmonicMinor&&major&&major.score-harmonicMinor.score<=0.25) bestSameRootMode=harmonicMinor;
+
+        // If bar harmony suggests a dominant-7 chord on scale degree IV (e.g. E7 in B minor),
+        // prefer Dorian (raised 6) over Harmonic Minor/Major.
+        const dorian=sameRootModes.find(c=>c.scaleIndex===2);
+        if(dorian){
+          const tonic=globalBest.root;
+          const raised6Pc=(tonic+9)%12, flat6Pc=(tonic+8)%12;
+          const ivRoot=(tonic+5)%12;
+          const iv7Score=(barHist[ivRoot]||0)+(barHist[(ivRoot+4)%12]||0)+(barHist[(ivRoot+7)%12]||0)+(barHist[(ivRoot+10)%12]||0);
+          const raised6Wins=(barHist[raised6Pc]||0)>(barHist[flat6Pc]||0)+0.015;
+          const closeToBest=(bestSameRootMode.score-dorian.score)<=0.22;
+          if(raised6Wins&&iv7Score>=0.34&&closeToBest) bestSameRootMode=dorian;
+        }
+      }
+    }
     barModeOverride.push(
       bestSameRootMode&&bestSameRootMode.score>globalBarScore+minModeSwitchMargin
         ? {root:bestSameRootMode.root,scaleIndex:bestSameRootMode.scaleIndex}
@@ -882,7 +865,7 @@ function detectModulationsHierarchical(notes,midi,weights,bonus=SCALE_BONUS){
     const runStart_t=runStart*tpm, runEnd_t=(runEnd+1)*tpm;
     const runNotes=pitched.filter(n=>n.startTick>=runStart_t&&n.startTick<runEnd_t);
     const hist=buildWeightedHistogramFromNotes(runNotes,tpb,tpm,weights);
-    const allCandidates=detectBest(hist,bonus);
+    const allCandidates=detectBest(hist);
     const tonalCandidates=allCandidates.filter(c=>TONAL_SCALE_SET.has(c.scaleIndex));
     const best=(tonalCandidates[0]||allCandidates[0]);
     let chosen=best;
@@ -926,37 +909,6 @@ function detectModulationsHierarchical(notes,midi,weights,bonus=SCALE_BONUS){
   merged[0].startTick=0;
   merged[merged.length-1].endTick=lastTick;
 
-  // Cascade refinement for divided regions:
-  // 1) If a region maps to the same scale-note set as the main key, keep global.
-  // 2) If its note combination differs from neighbours, treat as modulation.
-  //    Prefer same-root scale change first; otherwise choose a new key center.
-  for(let i=0;i<merged.length;i++){
-    const seg=merged[i];
-    if(sameNoteSet(seg.root,SCALES[seg.scaleIndex],globalBest.root,SCALES[globalBest.scaleIndex])){
-      seg.root=globalBest.root;
-      seg.scaleIndex=globalBest.scaleIndex;
-      continue;
-    }
-
-    const segPcs=buildRangePitchClassSet(pitched,seg.startTick,seg.endTick);
-    const prevPcs=i>0?buildRangePitchClassSet(pitched,merged[i-1].startTick,merged[i-1].endTick):null;
-    const nextPcs=i+1<merged.length?buildRangePitchClassSet(pitched,merged[i+1].startTick,merged[i+1].endTick):null;
-    const differsPrev=prevPcs?!samePitchClassSet(segPcs,prevPcs):false;
-    const differsNext=nextPcs?!samePitchClassSet(segPcs,nextPcs):false;
-    const differsFromNeighbours=(prevPcs&&nextPcs)?(differsPrev&&differsNext):(prevPcs?differsPrev:(nextPcs?differsNext:false));
-    if(!differsFromNeighbours) continue;
-
-    const segNotes=pitched.filter(n=>n.startTick<seg.endTick&&n.startTick+n.duration>seg.startTick);
-    if(segNotes.length<2) continue;
-
-    const chosen=chooseCascadeRegionKey(segNotes,tpb,tpm,weights,globalBest,TONAL_SCALE_SET,bonus);
-    seg.root=chosen.root;
-    seg.scaleIndex=chosen.scaleIndex;
-  }
-  merged=mergeByLabel(merged);
-  merged[0].startTick=0;
-  merged[merged.length-1].endTick=lastTick;
-
   return merged;
 }
 const SEG_COLORS=['#7b68ee','#00cba9','#ff6b8a','#f4a04a','#4ab8f4','#c084fc','#34d399','#f87171','#fbbf24','#60a5fa'];
@@ -990,10 +942,12 @@ function preferFlatsForKey(root,scaleIndex){
   if(scaleIndex===1) return minorFlatRoots.has(root);
   return majorFlatRoots.has(root)||minorFlatRoots.has(root);
 }
-function displayChordLabel(rootPc,intervals,entryRoot,entryScaleIndex){
+function displayChordLabel(rootPc,intervals,entryRoot,entryScaleIndex,bassPc){
   const idx=CHORD_TYPES.findIndex(t=>t.length===intervals.length&&t.every((v,i)=>v===intervals[i]));
   const names=preferFlatsForKey(entryRoot,entryScaleIndex)?NOTE_NAMES_FLAT:NOTE_NAMES;
-  return names[rootPc]+(idx>=0?CHORD_SUFFIXES[idx]:'');
+  const base=names[rootPc]+(idx>=0?CHORD_SUFFIXES[idx]:'');
+  if(bassPc!==undefined&&bassPc!==null&&bassPc!==rootPc) return base+'/'+names[bassPc];
+  return base;
 }
 function bestChordRootAndType(hist,segRoot,scaleIdx){
   if(!hist){ const scale=SCALES[scaleIdx]; const ivl=(scale&&scale.i.length>=5)?[scale.i[0],scale.i[2],scale.i[4]]:[0,4,7]; return {rootPc:segRoot,intervals:ivl}; }
@@ -1077,8 +1031,20 @@ function buildLiveChordTimeline(entry){
       const third=((keyScale.i[(deg+2)%7]-keyScale.i[deg])+12)%12;
       diatonicQualityIdx[pc]=(third===4)?0:(third===3)?1:2;
     }
+    // In minor keys, the dominant is commonly major (harmonic minor behavior).
+    // This avoids false F#m labels in progressions where F# should be major.
+    if(entry.scaleIndex===1){
+      const dominantPc=(entry.root+keyScale.i[4])%12;
+      diatonicQualityIdx[dominantPc]=0;
+    }
   }
   let prevRootPc=null;
+  let prevBassPc=null;
+  // Pedal bass carry: remember the last clearly-low bass note (note<=48) so that
+  // a repeating bass ostinato keeps showing the slash even between re-attacks.
+  let pedalBassPc=null, pedalBassTick=-99999;
+  const PEDAL_CARRY_TICKS=tpb*2; // carry for up to 2 beats
+  const minorDominantPc=(entry.scaleIndex===1)?((entry.root+7)%12):null;
   for(let t=0;t<=lastTick;t+=step){
     const active=pitched.filter(n=>n.startTick<=t&&t<n.startTick+n.duration);
     if(active.length<2) continue;
@@ -1087,7 +1053,9 @@ function buildLiveChordTimeline(entry){
     // Keep only harmonically stable material: sustained notes near the bass register.
     // Use a tiered approach: prefer long-held notes but fall back to shorter ones so
     // passing chords (notes held for ~half a beat) are not silently dropped.
-    const harmCeil=Math.min(84,bassAnchor+28); // allow ~2.3 octaves above bass for chord quality
+    // Clamp harmCeil so that very low sub-bass pedal notes (e.g. note 23) don't
+    // cut off upper chord tones that sit above the naive bassAnchor+28 ceiling.
+    const harmCeil=Math.min(84,Math.max(bassAnchor,40)+28); // always allow up to at least note 68
     let harmonic=active.filter(n=>n.duration>=tpb*0.9&&n.note<=harmCeil);
     if(harmonic.length<2) harmonic=active.filter(n=>n.duration>=tpb*0.4&&n.note<=harmCeil);
     if(harmonic.length<2) continue;
@@ -1099,12 +1067,20 @@ function buildLiveChordTimeline(entry){
       const velW=0.6+(n.velocity/127)*0.8;
       h[n.note%12]+=durW*regW*velW;
     }
-    // Extra emphasis on the bass tones to anchor harmony.
-    const bassPool=harmonic.filter(n=>n.note<=60);
-    const bassNote=(bassPool.length?bassPool:harmonic).reduce((best,n)=>{
+    // Bass is selected from all active low notes (not only harmonic-filtered notes),
+    // so pedal/inversion bass notes remain visible in slash chords.
+    const bassPool=active.filter(n=>n.note<=60);
+    const bassNote=(bassPool.length?bassPool:active).reduce((best,n)=>{
       if(!best) return n;
-      if(n.duration>best.duration) return n;
-      if(n.duration===best.duration&&n.note<best.note) return n;
+      const score=(x)=>{
+        const lowerBias=Math.max(0,(72-x.note)/24); // lower notes are more likely harmonic bass
+        const durBias=Math.max(0.25,Math.min(1.75,x.duration/tpb));
+        const stickBias=(prevBassPc!==null&&x.note%12===prevBassPc)?0.55:0;
+        return lowerBias+durBias+stickBias;
+      };
+      const a=score(n),b=score(best);
+      if(a>b) return n;
+      if(a===b&&n.note<best.note) return n;
       return best;
     },null);
     h[bassNote.note%12]+=2.8;
@@ -1116,22 +1092,33 @@ function buildLiveChordTimeline(entry){
     let{rootPc,intervals}=bestChordCandidate(norm,bassPc,prevRootPc);
     // Snap to diatonic major/minor quality unless contrary evidence is clearly dominant
     const _dq=diatonicQualityIdx[rootPc];
-    const _detIdx=CHORD_TYPES.findIndex(ti=>ti.length===intervals.length&&ti.every((v,i)=>v===intervals[i]));
+    let _detIdx=CHORD_TYPES.findIndex(ti=>ti.length===intervals.length&&ti.every((v,i)=>v===intervals[i]));
     if(_dq===1&&(_detIdx===0||_detIdx===4)){ // expected minor, got major or dom7
       const maj3=(norm[(rootPc+4)%12]||0),min3=(norm[(rootPc+3)%12]||0);
-      if(maj3<min3+0.15) intervals=CHORD_TYPES[1]; // snap to minor triad
+      if(min3>maj3+0.08) intervals=CHORD_TYPES[1]; // snap only with clear minor-third evidence
     } else if(_dq===0&&_detIdx===1){ // expected major, got minor
       const maj3=(norm[(rootPc+4)%12]||0),min3=(norm[(rootPc+3)%12]||0);
-      if(min3<maj3+0.15) intervals=CHORD_TYPES[0]; // snap to major triad
+      if(maj3>min3+0.08) intervals=CHORD_TYPES[0]; // snap only with clear major-third evidence
+    }
+    _detIdx=CHORD_TYPES.findIndex(ti=>ti.length===intervals.length&&ti.every((v,i)=>v===intervals[i]));
+    // Minor-key dominant correction: treat V as major/dominant when third evidence is ambiguous.
+    if(minorDominantPc!==null&&rootPc===minorDominantPc&&(_detIdx===1||_detIdx===6)){
+      const maj3=(norm[(rootPc+4)%12]||0),min3=(norm[(rootPc+3)%12]||0);
+      if(!(min3>maj3+0.10)) intervals=CHORD_TYPES[_detIdx===6?4:0];
     }
     const chordTypeIdx=CHORD_TYPES.findIndex(ti=>ti.length===intervals.length&&ti.every((v,i)=>v===intervals[i]));
     // Avoid unstable altered colors unless there is enough harmonic support.
     if((chordTypeIdx===2||chordTypeIdx===3||chordTypeIdx===7||chordTypeIdx===8)&&harmonic.length<3) continue;
-    const label=displayChordLabel(rootPc,intervals,entry.root,entry.scaleIndex);
+    // Update pedal bass register when a clearly-low note is sounding.
+    if(bassNote.note<=48){ pedalBassPc=bassPc; pedalBassTick=t; }
+    // Use the pedal bass as display bass if still within the carry window.
+    const displayBassPc=(pedalBassPc!==null&&(t-pedalBassTick)<=PEDAL_CARRY_TICKS)?pedalBassPc:bassPc;
+    const label=displayChordLabel(rootPc,intervals,entry.root,entry.scaleIndex,displayBassPc!==rootPc?displayBassPc:undefined);
     const last=segs[segs.length-1];
     if(last&&last.label===label) last.endTick=t+step;
     else segs.push({startTick:t,endTick:t+step,label});
     prevRootPc=rootPc;
+    prevBassPc=bassPc;
   }
   if(!segs.length) return [];
   // Remove very short single-step islands between stable neighboring labels
@@ -1146,6 +1133,31 @@ function buildLiveChordTimeline(entry){
     const last=merged[merged.length-1];
     if(last&&last.label===s.label&&last.endTick>=s.startTick) last.endTick=Math.max(last.endTick,s.endTick);
     else merged.push({...s});
+  }
+  // Multi-pass: absorb any segment shorter than 1.5 beats into its best neighbor.
+  // Prefer a same-label neighbor; otherwise prefer the longer neighbor.
+  const minDisplayTicks=Math.round(1.5*tpb);
+  let changed=true;
+  while(changed){
+    changed=false;
+    for(let i=0;i<merged.length;i++){
+      const dur=merged[i].endTick-merged[i].startTick;
+      if(dur<minDisplayTicks&&merged.length>1){
+        const prevLen=i>0?merged[i-1].endTick-merged[i-1].startTick:0;
+        const nextLen=i<merged.length-1?merged[i+1].endTick-merged[i+1].startTick:0;
+        const prevSame=i>0&&merged[i-1].label===merged[i].label;
+        const nextSame=i<merged.length-1&&merged[i+1].label===merged[i].label;
+        const goLeft=prevSame&&!nextSame?true:!prevSame&&nextSame?false:prevLen>=nextLen;
+        if(goLeft&&i>0){ merged[i-1].endTick=merged[i].endTick; merged.splice(i,1); }
+        else if(i<merged.length-1){ merged[i+1].startTick=merged[i].startTick; merged.splice(i,1); }
+        else{ merged[i-1].endTick=merged[i].endTick; merged.splice(i,1); }
+        changed=true; break;
+      }
+    }
+  }
+  // Re-merge consecutive same-label segments created by absorption.
+  for(let i=merged.length-1;i>0;i--){
+    if(merged[i].label===merged[i-1].label){ merged[i-1].endTick=merged[i].endTick; merged.splice(i,1); }
   }
   return merged.map(s=>({startSec:toSec(s.startTick),endSec:toSec(s.endTick),label:s.label}));
 }
@@ -1292,7 +1304,20 @@ function buildChordOnlyMidi(originalMidi,segments,notes,songName){
   const trackLabel=(songName?songName+' - ':'')+'Chords';
   const nameBytes=Array.from(trackLabel).map(c=>c.charCodeAt(0));
   const nameEv={_tick:0,kind:'meta',metaType:0x03,data:nameBytes};
-  const chordEvs=sanitizeChordTrackEvents(buildChordTrackEvs(segments,pitched,tpb,tpm,lastTick,0));
+  // Write the actual pitched notes exactly as they appear on the piano keyboard,
+  // preserving the original timing, pitch, velocity and channel.
+  const noteAbsEvs=[];
+  for(const n of pitched){
+    noteAbsEvs.push({_tick:n.startTick,kind:'noteOn',channel:n.channel,note:n.note,velocity:n.velocity});
+    const offTick=n.startTick+Math.max(1,n.duration);
+    noteAbsEvs.push({_tick:offTick,kind:'noteOff',channel:n.channel,note:n.note,velocity:0});
+  }
+  // CC key/scale markers so the file remains compatible with the existing loader.
+  const ccAbsEvs=segments.flatMap(seg=>[
+    {_tick:seg.startTick,_isCC:true,kind:'cc',channel:0,number:85,value:Math.max(0,Math.min(127,seg.root|0))},
+    {_tick:seg.startTick,_isCC:true,kind:'cc',channel:0,number:86,value:Math.max(0,Math.min(127,seg.scaleIndex|0))},
+  ]);
+  const chordEvs=[...noteAbsEvs,...ccAbsEvs];
   const allAbs=[nameEv,...metaAbs,...chordEvs].sort((a,b)=>a._tick-b._tick||(a._isCC?-1:1));
   let prevTick=0;
   const singleTrack=allAbs.map(ev=>{ const delta=Math.max(0,ev._tick-prevTick); prevTick=ev._tick; const{_tick,_isCC,...rest}=ev; return{...rest,delta}; });
@@ -2162,12 +2187,11 @@ function analyzeEntry(entry){
   entry.histogram=hist;
   const total=hist.reduce((a,b)=>a+b,0);
   if(!total){ entry.error='No pitched note events found'; return; }
-  const bonus=isMonophonic(entry.notes)?SCALE_BONUS_MONO:SCALE_BONUS;
-  const cands=detectBest(hist,bonus);
+  const cands=detectBest(hist);
   entry.candidates=cands;
   const best=chooseGlobalBest(cands,hist)||cands[0];
   entry.root=best.root; entry.scaleIndex=best.scaleIndex;
-  entry.segments=detectModulationsHierarchical(entry.notes,entry.midi,APP.weights,bonus);
+  entry.segments=detectModulationsHierarchical(entry.notes,entry.midi,APP.weights);
   if(entry.segments.length===1){ entry.segments[0].root=entry.root; entry.segments[0].scaleIndex=entry.scaleIndex; }
 }
 
@@ -2245,8 +2269,6 @@ function renderAnalysis(entry){
   const btnChord=document.getElementById('btnDownloadChord');
   if(btnChord) btnChord.disabled=!(entry&&entry.midi);
   if(!entry.histogram||!entry.candidates) return;
-  document.getElementById('keySelect').value=entry.root;
-  document.getElementById('scaleSelect').value=entry.scaleIndex;
   refreshPiano(entry.histogram,entry.root,entry.scaleIndex,entry.noteFreqMap,APP.activeNotes);
   refreshModulations(entry);
 }
@@ -2491,31 +2513,23 @@ function downloadChord(){
   triggerDownload(bytes,songName+' - Chord.mid');
 }
 
+function initMixToggle(){
+  const mixCard=document.getElementById('mixCard');
+  const btn=document.getElementById('btnMixMin');
+  if(!mixCard||!btn) return;
+  const setState=(minimized)=>{
+    mixCard.classList.toggle('minimized',minimized);
+    btn.textContent=minimized?'+':'-';
+    btn.title=minimized?'Expand mixer':'Minimize mixer';
+    btn.setAttribute('aria-expanded',String(!minimized));
+  };
+  setState(false);
+  btn.addEventListener('click',()=>setState(!mixCard.classList.contains('minimized')));
+}
+
 // ─────────────────────────────────────────────────────────────
 // INIT
 // ─────────────────────────────────────────────────────────────
-function initDropdowns(){
-  const ks=document.getElementById('keySelect'),ss=document.getElementById('scaleSelect');
-  NOTE_NAMES.forEach((n,i)=>ks.add(new Option(n,i)));
-  SCALES.forEach((s,i)=>ss.add(new Option(s.name,i)));
-  ks.addEventListener('change',()=>{
-    if(!APP.entry) return;
-    APP.entry.root=parseInt(ks.value,10);
-    const e=APP.entry;
-    if(e.segments&&e.segments.length===1){ e.segments[0].root=e.root; }
-    refreshPiano(e.histogram,e.root,e.scaleIndex,e.noteFreqMap,APP.activeNotes);
-    if(!e.error) autoSave(e,APP.filePath);
-  });
-  ss.addEventListener('change',()=>{
-    if(!APP.entry) return;
-    APP.entry.scaleIndex=parseInt(ss.value,10);
-    const e=APP.entry;
-    if(e.segments&&e.segments.length===1){ e.segments[0].scaleIndex=e.scaleIndex; }
-    refreshPiano(e.histogram,e.root,e.scaleIndex,e.noteFreqMap,APP.activeNotes);
-    if(!e.error) autoSave(e,APP.filePath);
-  });
-}
-
 // Regenerate chord MIDI files for all favorites in the background on startup
 async function regenerateFavoriteChords(){
   const paths=[...APP.favorites];
@@ -2529,8 +2543,7 @@ async function regenerateFavoriteChords(){
       const notes=buildNoteList(midi);
       const hist=buildWeightedHistogram(notes,midi,APP.weights);
       if(!hist.reduce((a,b)=>a+b,0)) continue;
-      const bonus=isMonophonic(notes)?SCALE_BONUS_MONO:SCALE_BONUS;
-      const cands=detectBest(hist,bonus);
+      const cands=detectBest(hist);
       const root=cands[0].root,scaleIndex=cands[0].scaleIndex;
       const segs=[{startTick:0,endTick:getMidiLastTick(midi),root,scaleIndex}];
       const songName=p.replace(/^.*[\\/]/,'').replace(/\.(mid|midi)$/i,'');
@@ -2545,7 +2558,7 @@ async function regenerateFavoriteChords(){
 
 document.addEventListener('DOMContentLoaded',()=>{
   loadFavorites();
-  initDropdowns();
+  initMixToggle();
   initGM();
   initTree();
   // Kick off background chord regeneration for favorites after tree is ready
@@ -2727,8 +2740,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           if(!isDrumOnly){
             const hist=buildWeightedHistogram(notes,midi,APP.weights);
             if(!hist.reduce((a,b)=>a+b,0)){ done++; skipped++; continue; }
-            const bonus=isMonophonic(notes)?SCALE_BONUS_MONO:SCALE_BONUS;
-            const cands=detectBest(hist,bonus);
+            const cands=detectBest(hist);
             const root=cands[0].root, scaleIndex=cands[0].scaleIndex;
             const segs=[{startTick:0,endTick:getMidiLastTick(midi),root,scaleIndex}];
             fakeEntry={name:item.name,midi,notes,root,scaleIndex,segments:segs,histogram:hist,error:null};
