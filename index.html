@@ -167,12 +167,39 @@
     }
     .btn-stop:hover { border-color: var(--red); color: var(--red); }
     .pb-progress { flex: 1; cursor: pointer; padding: 9px 0; }
-    .pb-bg { height: 4px; background: var(--s2); border-radius: 2px; overflow: hidden; }
+    .pb-bg { height: 4px; background: var(--s2); border-radius: 2px; position: relative; overflow: visible; }
     .pb-fill {
       height: 100%; width: 0%;
       background: linear-gradient(90deg, var(--accent), var(--green));
       border-radius: 2px; transition: width 0.1s linear;
+      position: relative; z-index: 2;
     }
+    .pb-range-sel {
+      position: absolute; top: 0; bottom: 0; left: 0; width: 0;
+      background: rgba(123,104,238,0.3); border-radius: 2px; z-index: 1;
+      pointer-events: none;
+    }
+    .pb-handle {
+      position: absolute; top: 50%; transform: translate(-50%,-50%);
+      width: 10px; height: 20px; border-radius: 3px; z-index: 6;
+      cursor: ew-resize; user-select: none; touch-action: none;
+      box-shadow: 0 1px 5px rgba(0,0,0,.7); transition: filter .12s;
+    }
+    .pb-handle-start { background: var(--accent); }
+    .pb-handle-end   { background: var(--green); }
+    .pb-handle:hover { filter: brightness(1.3); }
+    .pb-range-row {
+      display: flex; align-items: center; gap: 8px;
+      margin-top: 7px; font-size: 11px; color: var(--dim);
+    }
+    .pb-range-lbl  { white-space: nowrap; }
+    .pb-range-time { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .pb-range-clear {
+      background: none; border: 1px solid var(--border); border-radius: 4px;
+      color: var(--dim); font-size: 10px; padding: 2px 7px; cursor: pointer;
+      font-family: inherit; margin-left: auto; transition: border-color .15s;
+    }
+    .pb-range-clear:hover { border-color: var(--red); color: var(--red); }
     .pb-time { font-size: 11px; color: var(--dim); white-space: nowrap; flex-shrink: 0; }
 
     /* ── CARD ── */
@@ -269,6 +296,43 @@
     .alt-bg { width: 80px; height: 3px; background: var(--s2); border-radius: 2px; flex-shrink: 0; }
     .alt-fill { height: 100%; background: var(--border); border-radius: 2px; }
     .alt-pct { width: 32px; text-align: right; color: var(--dim); }
+
+    /* ── PIANO ROLL ── */
+    .roll-wrap {
+      position: relative; width: 100%; overflow: hidden;
+      border-radius: 6px; cursor: crosshair;
+    }
+    #rollCanvas { width: 100%; height: 200px; display: block; background: #13132a; }
+    .roll-mask {
+      position: absolute; top: 0; bottom: 0;
+      background: rgba(0,0,0,0.52); pointer-events: none; z-index: 2;
+    }
+    .roll-ph {
+      position: absolute; top: 0; bottom: 0; width: 2px;
+      background: #fff; opacity: 0.9; pointer-events: none; z-index: 5;
+      box-shadow: 0 0 6px rgba(255,255,255,.7); transform: translateX(-1px);
+    }
+    .roll-ph::before {
+      content: ''; position: absolute; top: 0; left: 50%;
+      transform: translateX(-50%);
+      border-left: 5px solid transparent; border-right: 5px solid transparent;
+      border-top: 7px solid #fff;
+    }
+    .roll-rh {
+      position: absolute; top: 0; bottom: 0; width: 12px;
+      cursor: ew-resize; z-index: 6; transform: translateX(-6px);
+    }
+    .roll-rh::after {
+      content: ''; position: absolute; top: 0; bottom: 0; left: 5px; width: 2px;
+      border-radius: 1px;
+    }
+    .roll-rh-s::after { background: var(--accent); box-shadow: 0 0 5px var(--accent); }
+    .roll-rh-e::after { background: var(--green);  box-shadow: 0 0 5px var(--green);  }
+    .roll-legend {
+      display: flex; gap: 14px; align-items: center; flex-wrap: wrap;
+      margin-top: 9px; font-size: 11px; color: var(--dim);
+    }
+    .roll-legend-item { display: flex; align-items: center; gap: 5px; }
 
     /* ── PIANO ── */
     .piano-wrap { position: relative; width: 100%; }
@@ -371,6 +435,10 @@
     .btn-download:hover { opacity: 0.88; }
     .btn-download-chord {
       background: linear-gradient(135deg, var(--green), #009e83);
+      margin-top: 0;
+    }
+    .btn-download-portion {
+      background: linear-gradient(135deg, #f4a04a, #d97706);
       margin-top: 0;
     }
     .btn-download:disabled {
@@ -501,9 +569,19 @@
           <button class="btn-play" id="btnPlay">▶</button>
           <button class="btn-stop" id="btnStop">■</button>
           <div class="pb-progress" id="pbProgress">
-            <div class="pb-bg"><div class="pb-fill" id="pbFill"></div></div>
+            <div class="pb-bg" id="pbBg">
+              <div class="pb-range-sel" id="pbRangeSel"></div>
+              <div class="pb-fill" id="pbFill"></div>
+              <div class="pb-handle pb-handle-start" id="pbHandleStart" title="Drag to set start point"></div>
+              <div class="pb-handle pb-handle-end"   id="pbHandleEnd"   title="Drag to set end point"></div>
+            </div>
           </div>
           <div class="pb-time" id="pbTime">0:00 / 0:00</div>
+        </div>
+        <div class="pb-range-row hidden" id="pbRangeRow">
+          <span class="pb-range-lbl">Range</span>
+          <span class="pb-range-time" id="pbRangeTime">0:00 – 0:00</span>
+          <button class="pb-range-clear" id="pbRangeClear">✕ Clear</button>
         </div>
         <div class="pb-vol-row">
           <div class="pb-vol-item">
@@ -514,6 +592,25 @@
             <span class="pb-vol-label">Audio</span>
             <input type="range" class="pb-vol-slider" id="pbAudioVol" min="0" max="100" value="80">
           </div>
+        </div>
+      </div>
+
+      <!-- Piano Roll -->
+      <div class="card hidden" id="rollCard">
+        <div class="card-hdr">Piano Roll</div>
+        <div class="roll-wrap" id="rollWrap">
+          <canvas id="rollCanvas" height="200"></canvas>
+          <div class="roll-mask" id="rollMaskL" style="left:0;width:0"></div>
+          <div class="roll-mask" id="rollMaskR" style="right:0;width:0"></div>
+          <div class="roll-ph hidden" id="rollPh"></div>
+          <div class="roll-rh roll-rh-s" id="rollRhS" title="Drag: set start"></div>
+          <div class="roll-rh roll-rh-e" id="rollRhE" title="Drag: set end"></div>
+        </div>
+        <div class="roll-legend">
+          <div class="roll-legend-item"><div class="legend-dot" style="background:var(--green)"></div>Root</div>
+          <div class="roll-legend-item"><div class="legend-dot" style="background:var(--accent)"></div>In scale</div>
+          <div class="roll-legend-item"><div class="legend-dot" style="background:var(--red)"></div>Out of scale</div>
+          <span style="margin-left:auto;font-size:10px;color:var(--dim)">Click to seek · drag handles to trim</span>
         </div>
       </div>
 
@@ -571,6 +668,7 @@
       <!-- Download -->
       <button class="btn-download" id="btnDownload">Download Tagged MIDI</button>
       <button class="btn-download btn-download-chord" id="btnDownloadChord" disabled>Download Chord MIDI</button>
+      <button class="btn-download btn-download-portion hidden" id="btnDownloadPortion">✂ Download Portion</button>
       <button class="reset-link mt8" id="btnBack">← Back to file picker</button>
 
     </div><!-- /analysisPanel -->
@@ -1772,6 +1870,8 @@ const APP = {
   audioVol:    0.8,
   modWindow:   4,    // bars per analysis window
   modSens:     3,    // sensitivity 1-5
+  rangeStart:  0,    // seconds — playback/export start
+  rangeEnd:    null, // seconds — playback/export end (null = full file)
 };
 
 // FileEntry shape: { name, midi, notes, noteFreqMap, histogram, candidates, root, scaleIndex, segments, error }
@@ -1863,6 +1963,7 @@ function showLanding(){
   stopPlayer();
   for(const e of APP.files) if(e._audioUrl) URL.revokeObjectURL(e._audioUrl);
   APP.files=[]; APP.selected=-1;
+  APP.rangeStart=0; APP.rangeEnd=null;
   document.getElementById('landing').style.display='';
   document.getElementById('workspace').classList.remove('visible');
   document.getElementById('analysisPanel').classList.add('hidden');
@@ -1907,6 +2008,7 @@ function selectFile(i){
   document.getElementById('scaleSelect').value=entry.scaleIndex;
 
   renderAnalysis(entry);
+  resetRangeForEntry(entry);
 }
 
 function renderAnalysis(entry){
@@ -1952,6 +2054,7 @@ function renderAnalysis(entry){
 
   refreshPiano(entry.histogram, entry.root, entry.scaleIndex, entry.noteFreqMap, APP.activeNotes);
   refreshModulations(entry);
+  refreshPianoRoll(entry);
 }
 
 
@@ -2062,6 +2165,7 @@ function updateModPlayhead(currentSec, totalSec){
 function hideModPlayhead(){
   const ph = document.getElementById('modPlayhead');
   if(ph) ph.classList.add('hidden');
+  hideRollPlayhead();
 }
 
 // Piano float positions for each pitch class (white-key units from C of that octave).
@@ -2248,11 +2352,22 @@ function startPlayer(fromSec=0){
   APP.player.setGain(APP.midiVol);
   APP.player.onProgress=(sec,dur)=>{
     if(!dur) return;
+    // Stop at range end
+    if(APP.rangeEnd!==null && sec>=APP.rangeEnd){
+      APP.player._cleanup(); APP.player=null;
+      APP.paused=false; APP.pausedAt=APP.rangeStart; APP.activeNotes=new Set();
+      document.getElementById('btnPlay').textContent='▶';
+      document.getElementById('btnPlay').title='Play';
+      document.getElementById('pbFill').style.width=((APP.rangeEnd/dur)*100).toFixed(2)+'%';
+      refreshPiano(entry.histogram,entry.root,entry.scaleIndex,entry.noteFreqMap,new Set());
+      hideModPlayhead(); return;
+    }
     document.getElementById('pbFill').style.width=(sec/dur*100).toFixed(2)+'%';
     document.getElementById('pbTime').textContent=`${fmt(sec)} / ${fmt(dur)}`;
     APP.activeNotes=APP.player.getNotesAtSec(sec);
     refreshPiano(entry.histogram,entry.root,entry.scaleIndex,entry.noteFreqMap,APP.activeNotes);
     updateModPlayhead(sec, dur);
+    updateRollPlayhead(sec);
     // Live chord symbol from active notes
     const symEl=document.getElementById('modChordSym');
     if(symEl && APP.activeNotes.size>=2){
@@ -2265,7 +2380,7 @@ function startPlayer(fromSec=0){
     } else if(symEl){ symEl.textContent=''; }
   };
   APP.player.onEnd=()=>{
-    APP.paused=false; APP.pausedAt=0; APP.activeNotes=new Set();
+    APP.paused=false; APP.pausedAt=APP.rangeStart; APP.activeNotes=new Set();
     document.getElementById('btnPlay').textContent='▶';
     document.getElementById('btnPlay').title='Play';
     document.getElementById('pbFill').style.width='100%';
@@ -2280,7 +2395,7 @@ function startPlayer(fromSec=0){
 function onPlayPause(){
   if(!APP.player||!APP.player.playing){
     // Start or resume
-    startPlayer(APP.paused?APP.pausedAt:0);
+    startPlayer(APP.paused?APP.pausedAt:APP.rangeStart);
     APP.paused=false;
   } else {
     // Pause
@@ -2294,8 +2409,9 @@ function onPlayPause(){
 }
 
 function onProgressClick(e){
+  if(e.target.classList.contains('pb-handle')) return; // ignore handle drag-clicks
   if(!APP.player&&!APP.paused) return;
-  const bar=document.getElementById('pbFill').parentElement;
+  const bar=document.getElementById('pbBg');
   const rect=bar.getBoundingClientRect();
   const ratio=Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width));
   const dur=APP.player?APP.player.duration:0;
@@ -2384,6 +2500,412 @@ function downloadAll(){
 
 
 // ─────────────────────────────────────────────────────────────
+// PIANO ROLL
+// ─────────────────────────────────────────────────────────────
+
+const ROLL_LBL_W = 30; // px reserved for pitch labels
+
+function refreshPianoRoll(entry){
+  const card   = document.getElementById('rollCard');
+  const canvas = document.getElementById('rollCanvas');
+  const wrap   = document.getElementById('rollWrap');
+  if(!card || !canvas || !wrap) return;
+
+  if(!entry || !entry.notes){
+    card.classList.add('hidden'); return;
+  }
+  const notes = entry.notes.filter(n => n.channel !== 9);
+  if(!notes.length){ card.classList.add('hidden'); return; }
+
+  const toSec    = buildTempoConverter(entry.midi);
+  const totalSec = Math.max(...notes.map(n => toSec(n.startTick + n.duration)));
+  if(!totalSec){ card.classList.add('hidden'); return; }
+  card.classList.remove('hidden');
+
+  const dpr  = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const W    = Math.max(rect.width || 600, 200);
+  const H    = 200;
+  canvas.width  = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  // Pitch range
+  let minN = Math.min(...notes.map(n => n.note));
+  let maxN = Math.max(...notes.map(n => n.note));
+  minN = Math.max(0,   minN - 3);
+  maxN = Math.min(127, maxN + 3);
+  const pitchRange = maxN - minN + 1;
+  const LBL_W = ROLL_LBL_W;
+  const rollW  = W - LBL_W;
+  const rowH   = H / pitchRange;
+
+  const scaleSet = new Set(SCALES[entry.scaleIndex].i);
+
+  // Background
+  ctx.fillStyle = '#13132a';
+  ctx.fillRect(0, 0, W, H);
+
+  // Row backgrounds
+  for(let n = minN; n <= maxN; n++){
+    const pc     = n % 12;
+    const isBlack= [1,3,6,8,10].includes(pc);
+    const y      = H - (n - minN + 1) * rowH;
+    ctx.fillStyle = isBlack ? '#0e0e26' : '#16163a';
+    ctx.fillRect(LBL_W, y, rollW, rowH - 0.3);
+    if(pc === 0){
+      ctx.strokeStyle = '#2c2c55'; ctx.lineWidth = 0.6;
+      ctx.beginPath(); ctx.moveTo(LBL_W, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+  }
+
+  // Beat grid
+  const tpb = getTPB(entry.midi);
+  const {num, den} = getTimeSig(entry.midi);
+  const tpm = Math.round(tpb * num * 4 / den);
+  const barSec = toSec(tpm) - toSec(0);
+  const showBarNums = barSec / totalSec * rollW > 24;
+  let gridTick = 0, barNum = 0;
+  while(barNum <= 4000){
+    const sec = toSec(gridTick);
+    if(sec > totalSec + 0.001) break;
+    const x = LBL_W + (sec / totalSec) * rollW;
+    const isMajor = barNum % 4 === 0;
+    ctx.strokeStyle = isMajor ? '#2c2c55' : '#191930';
+    ctx.lineWidth   = isMajor ? 0.8 : 0.4;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    if(showBarNums && isMajor){
+      ctx.fillStyle  = '#2c2c55';
+      ctx.font       = '8px Inter,sans-serif';
+      ctx.textAlign  = 'left';
+      ctx.fillText('b' + (barNum + 1), x + 2, 9);
+    }
+    gridTick += tpm; barNum++;
+  }
+
+  // Notes
+  for(const n of notes){
+    const startS = toSec(n.startTick);
+    const endS   = toSec(n.startTick + n.duration);
+    const x = LBL_W + (startS / totalSec) * rollW;
+    const w = Math.max(1, ((endS - startS) / totalSec) * rollW);
+    const y = H - (n.note - minN + 1) * rowH;
+    const rel = ((n.note % 12) - entry.root + 12) % 12;
+    if((n.note % 12) === entry.root)  ctx.fillStyle = 'rgba(0,203,169,0.90)';
+    else if(scaleSet.has(rel))        ctx.fillStyle = 'rgba(123,104,238,0.80)';
+    else                              ctx.fillStyle = 'rgba(255,107,138,0.65)';
+    ctx.fillRect(x, y + 0.5, w - 0.5, Math.max(1.2, rowH - 1));
+  }
+
+  // Pitch label strip
+  ctx.fillStyle = '#13132a';
+  ctx.fillRect(0, 0, LBL_W, H);
+  ctx.font      = '8px Inter,sans-serif';
+  ctx.textAlign = 'right';
+  for(let n = minN; n <= maxN; n++){
+    const pc  = n % 12;
+    if(pc !== 0 && pc !== 5 && pc !== 9) continue;
+    const y   = H - (n - minN + 1) * rowH + rowH * 0.75;
+    const rel = (pc - entry.root + 12) % 12;
+    ctx.fillStyle = pc === (entry.root % 12) ? '#00cba9'
+                  : scaleSet.has(rel) ? '#7b68ee' : '#4a4a70';
+    ctx.fillText(NOTE_NAMES[pc] + (Math.floor(n / 12) - 1), LBL_W - 2, y);
+  }
+
+  // Store layout for overlay updates
+  wrap._totalSec = totalSec;
+  wrap._lblW     = LBL_W;
+  wrap._rollW    = rollW;
+  wrap._canvasW  = W;
+
+  updateRollRange();
+  hideRollPlayhead();
+}
+
+function _rollSecToLeft(sec){
+  const wrap = document.getElementById('rollWrap');
+  if(!wrap || !wrap._totalSec) return 0;
+  return wrap._lblW + Math.max(0, Math.min(1, sec / wrap._totalSec)) * wrap._rollW;
+}
+
+function _rollLeftToSec(left){
+  const wrap = document.getElementById('rollWrap');
+  if(!wrap || !wrap._totalSec || !wrap._rollW) return 0;
+  return Math.max(0, Math.min(1, (left - wrap._lblW) / wrap._rollW)) * wrap._totalSec;
+}
+
+function updateRollRange(){
+  const wrap = document.getElementById('rollWrap');
+  if(!wrap || !wrap._totalSec) return;
+  const dur      = wrap._totalSec;
+  const canvasW  = wrap._canvasW || wrap.clientWidth;
+  const startSec = APP.rangeStart;
+  const endSec   = APP.rangeEnd ?? dur;
+  const startL   = _rollSecToLeft(startSec);
+  const endL     = _rollSecToLeft(endSec);
+  const hasRange = APP.rangeStart > 0.01 || (APP.rangeEnd !== null && APP.rangeEnd < dur - 0.01);
+
+  const ml  = document.getElementById('rollMaskL');
+  const mr  = document.getElementById('rollMaskR');
+  const rhs = document.getElementById('rollRhS');
+  const rhe = document.getElementById('rollRhE');
+
+  if(ml){ ml.style.left = wrap._lblW + 'px'; ml.style.width = hasRange ? Math.max(0, startL - wrap._lblW) + 'px' : '0'; }
+  if(mr){ mr.style.left = endL + 'px'; mr.style.width = hasRange ? Math.max(0, canvasW - endL) + 'px' : '0'; }
+  if(rhs) rhs.style.left = startL + 'px';
+  if(rhe) rhe.style.left = endL + 'px';
+}
+
+function updateRollPlayhead(sec){
+  const ph = document.getElementById('rollPh');
+  if(!ph) return;
+  const left = _rollSecToLeft(sec);
+  ph.style.left = left + 'px';
+  ph.classList.remove('hidden');
+}
+
+function hideRollPlayhead(){
+  const ph = document.getElementById('rollPh');
+  if(ph) ph.classList.add('hidden');
+}
+
+function initRollHandles(){
+  function applyRollDrag(clientX, isStart){
+    const wrap = document.getElementById('rollWrap');
+    if(!wrap || !wrap._totalSec) return;
+    const rect = wrap.getBoundingClientRect();
+    const sec  = _rollLeftToSec(clientX - rect.left);
+    const dur  = wrap._totalSec;
+    if(isStart){
+      APP.rangeStart = Math.max(0, Math.min(sec, (APP.rangeEnd ?? dur) - 0.5));
+    } else {
+      APP.rangeEnd = Math.min(dur, Math.max(sec, APP.rangeStart + 0.5));
+    }
+    updateRangeUI();
+    updateRollRange();
+  }
+  function makeDraggable(id, isStart){
+    const el = document.getElementById(id); if(!el) return;
+    let dragging = false;
+    el.addEventListener('mousedown', e => { dragging=true; e.preventDefault(); e.stopPropagation(); });
+    document.addEventListener('mousemove', e => { if(dragging) applyRollDrag(e.clientX, isStart); });
+    document.addEventListener('mouseup',   () => { dragging=false; });
+    el.addEventListener('touchstart', e => { dragging=true; e.preventDefault(); }, { passive:false });
+    document.addEventListener('touchmove', e => { if(dragging) applyRollDrag(e.touches[0].clientX, isStart); }, { passive:false });
+    document.addEventListener('touchend',  () => { dragging=false; });
+  }
+  makeDraggable('rollRhS', true);
+  makeDraggable('rollRhE', false);
+
+  // Click canvas to seek
+  const canvas = document.getElementById('rollCanvas');
+  if(canvas){
+    canvas.addEventListener('click', e => {
+      const wrap = document.getElementById('rollWrap');
+      if(!wrap || !wrap._totalSec) return;
+      const rect = wrap.getBoundingClientRect();
+      const sec  = _rollLeftToSec(e.clientX - rect.left);
+      APP.pausedAt = sec; APP.paused = true;
+      startPlayer(sec);
+    });
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// RANGE SELECTION
+// ─────────────────────────────────────────────────────────────
+
+function getCurDuration(){
+  if(APP.player && APP.player.duration > 0) return APP.player.duration;
+  if(APP.selected < 0) return 0;
+  const entry = APP.files[APP.selected];
+  if(!entry || !entry.midi) return 0;
+  const toSec    = buildTempoConverter(entry.midi);
+  const noteList = buildNoteList(entry.midi).filter(n => n.channel !== 9);
+  return noteList.length ? Math.max(...noteList.map(n => toSec(n.startTick + n.duration))) : 0;
+}
+
+function updateRangeUI(){
+  const dur = getCurDuration();
+  if(!dur) return;
+  const startSec  = APP.rangeStart;
+  const endSec    = APP.rangeEnd ?? dur;
+  const startFrac = Math.max(0, Math.min(1, startSec / dur));
+  const endFrac   = Math.max(0, Math.min(1, endSec   / dur));
+  const startH = document.getElementById('pbHandleStart');
+  const endH   = document.getElementById('pbHandleEnd');
+  const sel    = document.getElementById('pbRangeSel');
+  const row    = document.getElementById('pbRangeRow');
+  const dlBtn  = document.getElementById('btnDownloadPortion');
+  if(startH) startH.style.left = (startFrac * 100).toFixed(3) + '%';
+  if(endH)   endH.style.left   = (endFrac   * 100).toFixed(3) + '%';
+  const hasRange = APP.rangeStart > 0.01 || (APP.rangeEnd !== null && APP.rangeEnd < dur - 0.01);
+  if(sel){
+    sel.style.left  = (startFrac * 100).toFixed(3) + '%';
+    sel.style.width = hasRange ? ((endFrac - startFrac) * 100).toFixed(3) + '%' : '0%';
+  }
+  if(row)   row.classList.toggle('hidden', !hasRange);
+  if(dlBtn) dlBtn.classList.toggle('hidden', !hasRange);
+  if(hasRange){
+    const el = document.getElementById('pbRangeTime');
+    if(el) el.textContent = fmt(startSec) + ' \u2013 ' + fmt(endSec);
+  }
+  updateRollRange();
+}
+
+function resetRangeForEntry(entry){
+  APP.rangeStart = 0;
+  APP.rangeEnd   = null;
+  const startH = document.getElementById('pbHandleStart');
+  const endH   = document.getElementById('pbHandleEnd');
+  const sel    = document.getElementById('pbRangeSel');
+  const row    = document.getElementById('pbRangeRow');
+  const dlBtn  = document.getElementById('btnDownloadPortion');
+  const show   = !!(entry && entry.midi);
+  if(startH){ startH.style.left = '0%';   startH.style.display = show ? '' : 'none'; }
+  if(endH)  { endH.style.left   = '100%'; endH.style.display   = show ? '' : 'none'; }
+  if(sel)   { sel.style.left = '0%'; sel.style.width = '0%'; }
+  if(row)   row.classList.add('hidden');
+  if(dlBtn) dlBtn.classList.add('hidden');
+  updateRollRange();
+}
+
+function clearRange(){
+  const entry = APP.selected >= 0 ? APP.files[APP.selected] : null;
+  resetRangeForEntry(entry);
+  updateRollRange();
+}
+
+function initRangeHandles(){
+  const startH = document.getElementById('pbHandleStart');
+  const endH   = document.getElementById('pbHandleEnd');
+  if(!startH || !endH) return;
+
+  function applyDrag(clientX, isStart){
+    const bar = document.getElementById('pbBg');
+    if(!bar) return;
+    const rect = bar.getBoundingClientRect();
+    if(!rect.width) return;
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const dur   = getCurDuration();
+    if(!dur) return;
+    const sec   = ratio * dur;
+    if(isStart){
+      APP.rangeStart = Math.max(0, Math.min(sec, (APP.rangeEnd ?? dur) - 0.5));
+    } else {
+      APP.rangeEnd = Math.min(dur, Math.max(sec, APP.rangeStart + 0.5));
+    }
+    updateRangeUI();
+  }
+
+  function makeDraggable(handle, isStart){
+    let dragging = false;
+    handle.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); e.stopPropagation(); });
+    document.addEventListener('mousemove', e => { if(dragging) applyDrag(e.clientX, isStart); });
+    document.addEventListener('mouseup',   () => { dragging = false; });
+    handle.addEventListener('touchstart', e => { dragging = true; e.preventDefault(); }, { passive: false });
+    document.addEventListener('touchmove', e => { if(dragging) applyDrag(e.touches[0].clientX, isStart); }, { passive: false });
+    document.addEventListener('touchend',  () => { dragging = false; });
+  }
+
+  makeDraggable(startH, true);
+  makeDraggable(endH,   false);
+}
+
+// Trim a MIDI file to [startSec, endSec]. Returns a new MIDI object.
+function trimMidiByTime(midi, startSec, endSec){
+  const toSec = buildTempoConverter(midi);
+  let maxTick = 0;
+  for(const track of midi.tracks){ let t=0; for(const ev of track) t+=ev.delta; maxTick=Math.max(maxTick,t); }
+
+  function secToTick(sec){
+    if(sec <= 0) return 0;
+    if(sec >= toSec(maxTick)) return maxTick;
+    let lo=0, hi=maxTick;
+    while(hi-lo>1){ const m=(lo+hi)>>1; if(toSec(m)<=sec) lo=m; else hi=m-1; }
+    return lo;
+  }
+
+  const startTick = secToTick(startSec);
+  const endTick   = secToTick(endSec);
+  if(startTick >= endTick) return null;
+
+  const newTracks = midi.tracks.map(track => {
+    const absEvs=[]; let tick=0;
+    for(const ev of track){ tick+=ev.delta; absEvs.push({...ev,_tick:tick}); }
+
+    // Capture last tempo / time-sig before startTick to seed the trimmed file
+    let seedTempo=null, seedTimeSig=null;
+    for(const ev of absEvs){
+      if(ev._tick > startTick) break;
+      if(ev.kind==='meta' && ev.metaType===0x51) seedTempo   = ev;
+      if(ev.kind==='meta' && ev.metaType===0x58) seedTimeSig = ev;
+    }
+
+    // Notes that were active at startTick (started before, not yet ended)
+    const activeAtStart = new Map();
+    for(const ev of absEvs){
+      if(ev._tick >= startTick) break;
+      const key = `${ev.channel},${ev.note}`;
+      if(ev.kind==='noteOn' && ev.velocity>0) activeAtStart.set(key, ev);
+      else if(ev.kind==='noteOff'||(ev.kind==='noteOn'&&ev.velocity===0)) activeAtStart.delete(key);
+    }
+
+    // Events strictly inside the range (strip old EOT)
+    const inRange = absEvs.filter(ev =>
+      ev._tick >= startTick && ev._tick < endTick &&
+      !(ev.kind==='meta' && ev.metaType===0x2F)
+    );
+
+    const seeds = [];
+    if(seedTempo)   seeds.push({...seedTempo,   _tick:startTick});
+    if(seedTimeSig) seeds.push({...seedTimeSig, _tick:startTick});
+    for(const ev of activeAtStart.values()){
+      seeds.push({...ev, _tick:startTick, kind:'noteOn'});
+      const hasOff = absEvs.some(e =>
+        e._tick >= startTick && e._tick <= endTick &&
+        (e.kind==='noteOff'||(e.kind==='noteOn'&&e.velocity===0)) &&
+        e.channel===ev.channel && e.note===ev.note
+      );
+      if(!hasOff)
+        seeds.push({_tick:endTick-1, kind:'noteOff', channel:ev.channel, note:ev.note, velocity:0});
+    }
+
+    const allEvs = [...seeds, ...inRange].sort((a,b) => a._tick - b._tick);
+    let prev = 0;
+    const deltaTrack = allEvs.map(ev => {
+      const {_tick,...rest} = ev;
+      const shifted = Math.max(0, _tick - startTick);
+      const delta   = Math.max(0, shifted - prev);
+      prev = shifted;
+      return {...rest, delta};
+    });
+    deltaTrack.push({delta:Math.max(0,(endTick-startTick)-prev), kind:'meta', metaType:0x2F, data:[]});
+    return deltaTrack;
+  });
+
+  return {...midi, tracks:newTracks};
+}
+
+function downloadPortion(){
+  if(APP.selected < 0) return;
+  const entry = APP.files[APP.selected];
+  if(!entry || !entry.midi) return;
+  const dur      = getCurDuration();
+  const startSec = APP.rangeStart;
+  const endSec   = APP.rangeEnd ?? dur;
+  if(endSec <= startSec){ alert('End must be after start.'); return; }
+  const trimmed = trimMidiByTime(entry.midi, startSec, endSec);
+  if(!trimmed){ alert('Could not trim MIDI.'); return; }
+  const songName = entry.name.replace(/\.(mid|midi)$/i, '');
+  const bytes    = new MIDISerializer().serialize(trimmed);
+  triggerDownload(bytes, songName + '_portion.mid');
+}
+
+
+// ─────────────────────────────────────────────────────────────
 // INIT
 // ─────────────────────────────────────────────────────────────
 
@@ -2398,12 +2920,14 @@ function initDropdowns(){
     APP.files[APP.selected].root=parseInt(ks.value,10);
     const e=APP.files[APP.selected];
     refreshPiano(e.histogram,e.root,e.scaleIndex,e.noteFreqMap,APP.activeNotes);
+    refreshPianoRoll(e);
   });
   ss.addEventListener('change',()=>{
     if(APP.selected<0) return;
     APP.files[APP.selected].scaleIndex=parseInt(ss.value,10);
     const e=APP.files[APP.selected];
     refreshPiano(e.histogram,e.root,e.scaleIndex,e.noteFreqMap,APP.activeNotes);
+    refreshPianoRoll(e);
   });
 }
 
@@ -2765,6 +3289,10 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('btnPlay').addEventListener('click',onPlayPause);
   document.getElementById('btnStop').addEventListener('click',()=>{ stopPlayer(); resetPlaybackUI(APP.files[APP.selected]); });
   document.getElementById('pbProgress').addEventListener('click',onProgressClick);
+  document.getElementById('pbRangeClear').addEventListener('click',clearRange);
+  document.getElementById('btnDownloadPortion').addEventListener('click',downloadPortion);
+  initRangeHandles();
+  initRollHandles();
 
   // Keyboard shortcuts
   document.addEventListener('keydown',e=>{
@@ -2778,6 +3306,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(APP.selected<0) return;
     const e=APP.files[APP.selected];
     if(e&&e.histogram) refreshPiano(e.histogram,e.root,e.scaleIndex,e.noteFreqMap,APP.activeNotes);
+    if(e&&e.notes) refreshPianoRoll(e);
   });
 });
 </script>

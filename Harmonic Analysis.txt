@@ -1,0 +1,95 @@
+Harmonic Analysis Pipeline
+Last updated: 2026-05-11
+
+Step 1 — Note Extraction
+All MIDI tracks are parsed into a flat note list. Three filters apply immediately:
+* Channel 9 (GM drum channel) is excluded — drums have no pitch meaning
+* Program 112–127 (percussive/SFX instruments) are excluded
+* Grace notes (duration < ⅛ beat) are excluded — too short to be harmonic
+
+Step 2 — Global Key Detection
+A pitch-class histogram is built from all remaining notes. Each pitch class (C, C#, D … B) gets a weight that combines four signals:
+
+  Signal        Weight   Why
+  Count          25%     How often the note appears
+  Duration       25%     Long notes matter more harmonically
+  Velocity       25%     Louder notes are more intentional
+  Beat position  50%     Notes on strong beats carry more tonal weight
+
+This histogram is scored against every combination of 12 roots × 35 scales = 420 candidates:
+
+  score = 0.70 × liftScore + 0.30 × rootProminence
+
+* liftScore: How much better does this key cover the notes than pure chance?
+  A 7-note scale covers 7/12 = 58% randomly. If a key covers 85%, it is well above chance.
+* rootProminence: Is the root note itself more prominent than the average in-scale note?
+  Prevents keys where the root is weak.
+
+A small bonus (+0.12 for Major/Minor, +0.06 for modes) gives diatonic keys a tie-breaking
+edge over exotic scales.
+
+After scoring, chooseGlobalBest() applies three refinement steps in order:
+
+1. Labelling convention — prefer natural over harmonic variants:
+   Harmonic Minor/Major are useful bar-by-bar but the natural form is the better home-key
+   label unless the raised note clearly dominates the entire piece (margin ≤ 0.12 / 0.10).
+
+2. General same-root disambiguation by discriminating-PC evidence (covers all 35 scales):
+   When same-root candidates score within 0.10 of each other, the algorithm identifies the
+   pitch classes that are unique to each candidate (discriminating PCs). For every candidate
+   it sums hist[pc] / membership for those PCs — PCs exclusive to one scale count fully,
+   PCs shared by half the pool count at half weight. The candidate whose distinctive notes
+   appear most in the piece wins, provided its evidence is ≥15% stronger than the runner-up.
+
+   Examples handled automatically (no hard-coded special cases):
+   * Minor vs Dorian           → flat-6 vs natural-6        (Ab vs A in C minor/Dorian)
+   * Major vs Mixolydian       → major-7 vs flat-7           (B vs Bb in C)
+   * Major vs Lydian           → natural-4 vs sharp-4        (F vs F# in C)
+   * Phrygian vs Phrygian Dom. → flat-3 vs natural-3         (Eb vs E in C)
+   * Melodic Minor vs Natural  → raised 6th and 7th evidence
+   * Any other close pair      → same logic, zero extra code
+
+3. Cross-root relative key resolution:
+   If Major and its relative Minor score within 0.005, the one whose root note is more
+   prominent in the histogram wins (e.g. D Major vs B Minor → B wins if B > D in weight).
+
+Step 3 — Bar-by-Bar Scan
+The song is divided into measures (bars). Each bar must contain notes from at least 3 distinct
+pitch classes before any mode-shift decision is made. Bars with fewer than 3 pitch classes
+(percussion leakage, isolated bass drone) keep the current key label unchanged — chromatic
+fraction is still computed for cross-root detection.
+
+For qualifying bars, two independent checks run:
+
+Path A — Same-root mode shift
+  All same-root scale candidates are re-ranked for the bar. Modes that share more notes with
+  the global key get an overlap boost (weight = 0.20 per extra shared note). The top-ranked
+  same-root mode wins if it beats the current key by ≥ 0.08 margin.
+
+  Special rule: in a global minor key, if the top same-root mode is parallel major, the
+  algorithm checks whether harmonic minor evidence is present (raised 7th, minor 3rd). If
+  so, Harmonic Minor is substituted for the parallel major label. This rule only fires for
+  parallel major — Dorian, Mixolydian, and all other modes are left untouched.
+
+Path B — Cross-root modulation
+  Are ≥ 30% of note durations using pitches outside the global key's note set? If yes, the
+  bar is "chromatic." Two consecutive chromatic bars trigger a full re-analysis of that
+  region to find a different root.
+
+Step 4 — Post-Processing
+Consecutive bars with the same label are merged into segments.
+The result is the modulation timeline — a list of {startTime, endTime, key, scale} segments
+drawn as colored blocks.
+
+Step 5 — Live Chord Detection (per quarter-beat)
+Every quarter-beat during playback, the active sounding notes are analyzed:
+1. Notes shorter than 15% of a beat are excluded (filters out very short ornaments)
+2. Notes are weighted by duration, register (lower = more bass authority), and velocity
+3. The bass note is identified from the lowest active note pool
+4. All 12 roots × 9 chord types (triad, 7th variants) are scored
+5. Diatonic quality bias: if the current key says "scale degree 2 is minor," E minor scores
+   higher than E major
+6. Bass continuity: the previous bass note gets a small sticky bonus (avoids jumping on
+   every single note)
+7. If a low pedal bass note (≤ MIDI note 48) was sounding recently, it is carried as a
+   slash chord bass for up to 4 beats

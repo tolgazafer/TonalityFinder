@@ -109,31 +109,9 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',-apple-system,Bl
 /* PIANO ROLL */
 .roll-wrap{position:relative;width:100%;border:1px solid var(--border);border-radius:6px;overflow:hidden;cursor:pointer;background:#101024;}
 #rollCanvas{width:100%;height:180px;display:block;}
-.roll-mask{position:absolute;top:0;bottom:0;background:rgba(0,0,0,.52);pointer-events:none;z-index:2;}
-.roll-rh{position:absolute;top:0;bottom:0;width:18px;cursor:ew-resize;z-index:8;transform:translateX(-9px);}
-.roll-rh::after{content:'';position:absolute;top:0;bottom:0;left:8px;width:3px;border-radius:2px;}
-.roll-rh::before{position:absolute;top:6px;left:50%;transform:translateX(-50%);font-size:9px;font-weight:800;letter-spacing:.4px;padding:2px 5px;border-radius:999px;color:#fff;line-height:1;}
-.roll-rh-s::after{background:var(--accent);box-shadow:0 0 5px var(--accent);}
-.roll-rh-e::after{background:var(--green);box-shadow:0 0 5px var(--green);}
-.roll-rh-s::before{content:'START';background:rgba(123,104,238,.88);}
-.roll-rh-e::before{content:'STOP';background:rgba(0,203,169,.88);}
 .roll-playhead{position:absolute;top:0;bottom:0;width:2px;background:#fff;opacity:.9;pointer-events:none;z-index:3;transform:translateX(-1px);box-shadow:0 0 6px rgba(255,255,255,.65);}
 .roll-playhead.hidden{display:none;}
 .roll-legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:11px;color:var(--dim);}
-
-/* EXPORT DRAG ZONES */
-.export-card{padding:12px;margin-top:10px;}
-.export-hint{font-size:10px;color:var(--dim);margin-bottom:10px;}
-.export-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
-.export-drop{display:flex;flex-direction:column;gap:3px;padding:10px 9px;border:1px dashed var(--border);border-radius:9px;background:linear-gradient(180deg,var(--s2),rgba(0,0,0,0));cursor:grab;user-select:none;transition:border-color .15s,transform .12s;}
-.export-drop:hover{border-color:var(--accent);transform:translateY(-1px);}
-.export-drop.dragging{border-color:var(--green);}
-.export-drop.disabled{opacity:.55;cursor:not-allowed;}
-.export-title{font-size:11px;font-weight:700;color:var(--text);}
-.export-meta{font-size:10px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-@media (max-width: 860px){
-  .export-grid{grid-template-columns:1fr;}
-}
 
 /* SELECTORS */
 .sel-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
@@ -434,17 +412,13 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;background:var(--acce
         <div class="card-hdr" style="margin-top:14px;">Piano Roll</div>
         <div class="roll-wrap" id="rollWrap">
           <canvas id="rollCanvas" height="180"></canvas>
-          <div class="roll-mask" id="rollMaskL" style="left:0;width:0"></div>
-          <div class="roll-mask" id="rollMaskR" style="right:0;width:0"></div>
           <div class="roll-playhead hidden" id="rollPlayhead"></div>
-          <div class="roll-rh roll-rh-s" id="rollRhS" title="Drag: set start"></div>
-          <div class="roll-rh roll-rh-e" id="rollRhE" title="Drag: set end"></div>
         </div>
         <div class="roll-legend">
           <div style="display:flex;align-items:center;gap:5px;"><div class="legend-dot" style="background:var(--green)"></div>Root</div>
           <div style="display:flex;align-items:center;gap:5px;"><div class="legend-dot" style="background:var(--accent)"></div>In Scale</div>
           <div style="display:flex;align-items:center;gap:5px;"><div class="legend-dot" style="background:var(--red)"></div>Out of Scale</div>
-          <span style="margin-left:auto;font-size:10px;" id="rollRangeLabel">Click timeline to seek · drag handles to trim</span>
+          <span style="margin-left:auto;font-size:10px;">Click timeline to seek</span>
         </div>
         <div class="card-hdr" style="margin-top:14px;">Piano Keyboard</div>
         <div class="piano-wrap">
@@ -452,26 +426,7 @@ input[type=range]::-moz-range-thumb{width:14px;height:14px;background:var(--acce
         </div>
       </div>
 
-      <button class="btn-download btn-download-chord hidden" id="btnDownloadChord" disabled>Download Chord MIDI</button>
-
-      <div class="card export-card" id="exportCard">
-        <div class="card-hdr">Export Drag and Drop</div>
-        <div class="export-hint">Browser-to-DAW drag can be limited on macOS. Drag works to Finder; click a tile to save and reveal a DAW-ready file in Finder. Active piano-roll range is applied.</div>
-        <div class="export-grid">
-          <div class="export-drop" id="exportChord" draggable="true">
-            <div class="export-title">Chord MIDI</div>
-            <div class="export-meta" id="exportChordMeta">Ready</div>
-          </div>
-          <div class="export-drop" id="exportWhole" draggable="true">
-            <div class="export-title">Whole MIDI</div>
-            <div class="export-meta" id="exportWholeMeta">Ready</div>
-          </div>
-          <div class="export-drop disabled" id="exportTracks" draggable="false">
-            <div class="export-title">Individual Tracks</div>
-            <div class="export-meta" id="exportTracksMeta">Placeholder</div>
-          </div>
-        </div>
-      </div>
+      <button class="btn-download btn-download-chord" id="btnDownloadChord" disabled>Download Chord MIDI</button>
 
     </div><!-- /analysisPanel -->
   </main>
@@ -1855,9 +1810,6 @@ const APP = {
   reverb:          0.11,
   comp:            0.53,
   autoplay:        true,  // autoplay when file is selected
-  rangeStart:      0,
-  rangeEnd:        null,
-  exportUrls:      {},
   meta:            {},
   favorites:       new Set(),
   filters:         { timeSig:'', instr:'', key:'', bpm:'' },
@@ -2348,8 +2300,6 @@ async function openFile(relPath, rowEl, opts={}){
 
   APP.entry=entry;
   APP.filePath=relPath;
-  APP.rangeStart=0;
-  APP.rangeEnd=null;
   APP.activeNotes=new Set();
   APP.chordMidi=null;
   document.getElementById('chordMixRow')?.classList.add('hidden');
@@ -2457,7 +2407,6 @@ function renderAnalysis(entry){
   refreshPiano(entry.histogram,entry.root,entry.scaleIndex,entry.noteFreqMap,APP.activeNotes);
   refreshPianoRoll(entry);
   refreshModulations(entry);
-  updateExportMeta();
 }
 
 function refreshModulations(entry){
@@ -2638,82 +2587,6 @@ function refreshPianoRoll(entry){
   }
 
   wrap._rollTotalSec=totalSec;
-  wrap._canvasW=W;
-  clampRangeToDuration(totalSec);
-  updateRollRange();
-  updateExportMeta();
-}
-
-function clampRangeToDuration(durationSec){
-  const dur=Math.max(0,durationSec||0);
-  APP.rangeStart=Math.max(0,Math.min(APP.rangeStart||0,Math.max(0,dur-0.25)));
-  if(APP.rangeEnd!==null) APP.rangeEnd=Math.max(APP.rangeStart+0.25,Math.min(APP.rangeEnd,dur));
-  if(APP.rangeEnd!==null&&APP.rangeEnd>=dur-0.01) APP.rangeEnd=null;
-}
-
-function getCurrentRange(entry){
-  const wrap=document.getElementById('rollWrap');
-  const dur=(wrap&&wrap._rollTotalSec)||getEntryDurationSec(entry);
-  const start=Math.max(0,Math.min(APP.rangeStart||0,dur));
-  const endRaw=APP.rangeEnd===null?dur:APP.rangeEnd;
-  const end=Math.max(start+0.001,Math.min(endRaw,dur));
-  return {startSec:start,endSec:end,durationSec:dur};
-}
-
-function getMeasureSnapContext(entry){
-  if(!entry||!entry.midi) return null;
-  const tpb=getTPB(entry.midi);
-  const ts=getTimeSig(entry.midi);
-  const tpm=Math.max(1,Math.round(tpb*ts.num*4/ts.den));
-  const toSec=buildTempoConverter(entry.midi);
-  const maxTick=Math.max(1,getMidiLastTick(entry.midi));
-  const maxBar=Math.max(1,Math.ceil(maxTick/tpm));
-
-  function secToTick(sec){
-    if(sec<=0) return 0;
-    if(sec>=toSec(maxTick)) return maxTick;
-    let lo=0,hi=maxTick;
-    while(hi-lo>1){ const m=(lo+hi)>>1; if(toSec(m)<=sec) lo=m; else hi=m-1; }
-    return lo;
-  }
-
-  return {tpm,toSec,secToTick,maxBar};
-}
-
-function _rollSecToLeft(sec){
-  const wrap=document.getElementById('rollWrap');
-  if(!wrap||!wrap._rollTotalSec) return 0;
-  const W=wrap._canvasW||wrap.clientWidth;
-  return Math.max(0,Math.min(1,sec/wrap._rollTotalSec))*W;
-}
-
-function _rollLeftToSec(left){
-  const wrap=document.getElementById('rollWrap');
-  if(!wrap||!wrap._rollTotalSec) return 0;
-  const W=Math.max(1,wrap._canvasW||wrap.clientWidth);
-  return Math.max(0,Math.min(1,left/W))*wrap._rollTotalSec;
-}
-
-function updateRollRange(){
-  const wrap=document.getElementById('rollWrap');
-  if(!wrap||!wrap._rollTotalSec) return;
-  const {startSec,endSec,durationSec}=getCurrentRange(APP.entry);
-  const startL=_rollSecToLeft(startSec);
-  const endL=_rollSecToLeft(endSec);
-  const W=wrap._canvasW||wrap.clientWidth;
-  const hasRange=startSec>0.01||endSec<durationSec-0.01;
-  const ml=document.getElementById('rollMaskL');
-  const mr=document.getElementById('rollMaskR');
-  const rhs=document.getElementById('rollRhS');
-  const rhe=document.getElementById('rollRhE');
-  if(ml){ ml.style.left='0px'; ml.style.width=hasRange?Math.max(0,startL)+'px':'0px'; }
-  if(mr){ mr.style.left=endL+'px'; mr.style.width=hasRange?Math.max(0,W-endL)+'px':'0px'; }
-  if(rhs) rhs.style.left=Math.max(9,Math.min(W-9,startL))+'px';
-  if(rhe) rhe.style.left=Math.max(9,Math.min(W-9,endL))+'px';
-  const lbl=document.getElementById('rollRangeLabel');
-  if(lbl) lbl.textContent=hasRange
-    ?`Range ${fmt(startSec)} - ${fmt(endSec)} · drag handles to trim`
-    :'Click timeline to seek · drag handles to trim';
 }
 
 function updateRollPlayhead(currentSec){
@@ -2733,66 +2606,7 @@ function hideRollPlayhead(){
 function initRollSeek(){
   const wrap=document.getElementById('rollWrap');
   if(!wrap) return;
-  let ignoreNextRollClick=false;
-
-  function applyRollDrag(clientX,isStart){
-    if(!APP.entry||!APP.entry.midi||!wrap._rollTotalSec) return;
-    const rect=wrap.getBoundingClientRect();
-    const sec=_rollLeftToSec(clientX-rect.left);
-    const snap=getMeasureSnapContext(APP.entry);
-    if(!snap) return;
-
-    const barAtPos=Math.max(0,Math.min(snap.maxBar,Math.round(snap.secToTick(sec)/snap.tpm)));
-    const startBar=Math.max(0,Math.min(snap.maxBar,Math.round(snap.secToTick(APP.rangeStart||0)/snap.tpm)));
-    const endBar=APP.rangeEnd===null
-      ? snap.maxBar
-      : Math.max(1,Math.min(snap.maxBar,Math.round(snap.secToTick(APP.rangeEnd)/snap.tpm)));
-
-    if(isStart){
-      const nextStart=Math.max(0,Math.min(endBar-1,barAtPos));
-      APP.rangeStart=snap.toSec(nextStart*snap.tpm);
-    } else {
-      const nextEnd=Math.max(startBar+1,Math.min(snap.maxBar,barAtPos));
-      APP.rangeEnd=(nextEnd>=snap.maxBar)?null:snap.toSec(nextEnd*snap.tpm);
-    }
-
-    updateRollRange();
-    updateExportMeta();
-  }
-
-  function makeDraggable(id,isStart){
-    const el=document.getElementById(id);
-    if(!el) return;
-    let dragging=false;
-    let moved=false;
-    const finishDrag=()=>{
-      if(!dragging) return;
-      dragging=false;
-      if(!moved) return;
-      ignoreNextRollClick=true;
-      if(isStart&&APP.entry&&APP.entry.midi){
-        const {startSec}=getCurrentRange(APP.entry);
-        APP.pausedAt=startSec;
-        APP.paused=true;
-        startPlayer(startSec);
-      }
-      moved=false;
-    };
-    el.addEventListener('mousedown',e=>{ dragging=true; moved=false; e.preventDefault(); e.stopPropagation(); });
-    document.addEventListener('mousemove',e=>{ if(dragging) applyRollDrag(e.clientX,isStart); });
-    document.addEventListener('mousemove',()=>{ if(dragging) moved=true; });
-    document.addEventListener('mouseup',finishDrag);
-    el.addEventListener('touchstart',e=>{ dragging=true; moved=false; e.preventDefault(); },{passive:false});
-    document.addEventListener('touchmove',e=>{ if(dragging){ moved=true; applyRollDrag(e.touches[0].clientX,isStart); } },{passive:false});
-    document.addEventListener('touchend',finishDrag);
-    el.addEventListener('click',e=>{ e.preventDefault(); e.stopPropagation(); });
-  }
-
-  makeDraggable('rollRhS',true);
-  makeDraggable('rollRhE',false);
-
   wrap.addEventListener('click',e=>{
-    if(ignoreNextRollClick){ ignoreNextRollClick=false; return; }
     if(!APP.entry||!APP.entry.midi||!wrap._rollTotalSec) return;
     const rect=wrap.getBoundingClientRect();
     const ratio=Math.max(0,Math.min(1,(e.clientX-rect.left)/Math.max(1,rect.width)));
@@ -2801,189 +2615,6 @@ function initRollSeek(){
     APP.paused=true;
     startPlayer(sec);
   });
-}
-
-function getEntryDurationSec(entry){
-  if(!entry||!entry.midi) return 0;
-  const toSec=buildTempoConverter(entry.midi);
-  const noteList=buildNoteList(entry.midi).filter(n=>n.channel!==9);
-  return noteList.reduce((m,n)=>{ const e=toSec(n.startTick+n.duration); return e>m?e:m; },0);
-}
-
-function trimMidiByTime(midi,startSec,endSec){
-  const toSec=buildTempoConverter(midi);
-  let maxTick=0;
-  for(const track of midi.tracks){ let t=0; for(const ev of track) t+=ev.delta; maxTick=Math.max(maxTick,t); }
-
-  function secToTick(sec){
-    if(sec<=0) return 0;
-    if(sec>=toSec(maxTick)) return maxTick;
-    let lo=0,hi=maxTick;
-    while(hi-lo>1){ const m=(lo+hi)>>1; if(toSec(m)<=sec) lo=m; else hi=m-1; }
-    return lo;
-  }
-
-  const startTick=secToTick(startSec);
-  const endTick=secToTick(endSec);
-  if(startTick>=endTick) return null;
-
-  const newTracks=midi.tracks.map(track=>{
-    const absEvs=[]; let tick=0;
-    for(const ev of track){ tick+=ev.delta; absEvs.push({...ev,_tick:tick}); }
-
-    let seedTempo=null,seedTimeSig=null;
-    for(const ev of absEvs){
-      if(ev._tick>startTick) break;
-      if(ev.kind==='meta'&&ev.metaType===0x51) seedTempo=ev;
-      if(ev.kind==='meta'&&ev.metaType===0x58) seedTimeSig=ev;
-    }
-
-    const activeAtStart=new Map();
-    for(const ev of absEvs){
-      if(ev._tick>=startTick) break;
-      const key=`${ev.channel},${ev.note}`;
-      if(ev.kind==='noteOn'&&ev.velocity>0) activeAtStart.set(key,ev);
-      else if(ev.kind==='noteOff'||(ev.kind==='noteOn'&&ev.velocity===0)) activeAtStart.delete(key);
-    }
-
-    const inRange=absEvs.filter(ev=>
-      ev._tick>=startTick&&ev._tick<endTick&&!(ev.kind==='meta'&&ev.metaType===0x2F)
-    );
-
-    const seeds=[];
-    if(seedTempo) seeds.push({...seedTempo,_tick:startTick});
-    if(seedTimeSig) seeds.push({...seedTimeSig,_tick:startTick});
-    for(const ev of activeAtStart.values()){
-      seeds.push({...ev,_tick:startTick,kind:'noteOn'});
-      const hasOff=absEvs.some(e=>
-        e._tick>=startTick&&e._tick<=endTick&&
-        (e.kind==='noteOff'||(e.kind==='noteOn'&&e.velocity===0))&&
-        e.channel===ev.channel&&e.note===ev.note
-      );
-      if(!hasOff) seeds.push({_tick:endTick-1,kind:'noteOff',channel:ev.channel,note:ev.note,velocity:0});
-    }
-
-    const allEvs=[...seeds,...inRange].sort((a,b)=>a._tick-b._tick);
-    let prev=0;
-    const deltaTrack=allEvs.map(ev=>{
-      const {_tick,...rest}=ev;
-      const shifted=Math.max(0,_tick-startTick);
-      const delta=Math.max(0,shifted-prev);
-      prev=shifted;
-      return {...rest,delta};
-    });
-    deltaTrack.push({delta:Math.max(0,(endTick-startTick)-prev),kind:'meta',metaType:0x2F,data:[]});
-    return deltaTrack;
-  });
-
-  return {...midi,tracks:newTracks};
-}
-
-function buildExportPayload(kind){
-  const entry=APP.entry;
-  if(!entry||!entry.midi) return null;
-  const songName=entry.name.replace(/\.(mid|midi)$/i,'');
-  const segs=entry.segments&&entry.segments.length?entry.segments:[{startTick:0,root:entry.root,scaleIndex:entry.scaleIndex}];
-  const {startSec,endSec,durationSec}=getCurrentRange(entry);
-  const hasRange=startSec>0.01||endSec<durationSec-0.01;
-  if(kind==='tracks') return null;
-
-  let midi;
-  let filename;
-  if(kind==='chord'){
-    midi=buildChordOnlyMidi(entry.midi,segs,entry.notes,songName);
-    filename=songName+'_chord.mid';
-  } else {
-    midi=injectCCs(entry.midi,segs,entry.notes);
-    filename=songName+'_whole.mid';
-  }
-  if(hasRange){
-    const trimmed=trimMidiByTime(midi,startSec,endSec);
-    if(trimmed) midi=trimmed;
-  }
-  const bytes=new MIDISerializer().serialize(midi);
-  return {bytes,filename};
-}
-
-function updateExportMeta(){
-  const entry=APP.entry;
-  const cm=document.getElementById('exportChordMeta');
-  const wm=document.getElementById('exportWholeMeta');
-  const tm=document.getElementById('exportTracksMeta');
-  if(!entry||!entry.midi){
-    if(cm) cm.textContent='Load a MIDI file';
-    if(wm) wm.textContent='Load a MIDI file';
-    if(tm) tm.textContent='Placeholder';
-    return;
-  }
-  const {startSec,endSec,durationSec}=getCurrentRange(entry);
-  const hasRange=startSec>0.01||endSec<durationSec-0.01;
-  const rangeLabel=hasRange?`${fmt(startSec)} - ${fmt(endSec)}`:'Full length';
-  if(cm) cm.textContent=rangeLabel;
-  if(wm) wm.textContent=rangeLabel;
-  if(tm) tm.textContent='Coming soon';
-}
-
-function initExportDragZones(){
-  async function saveForDaw(payload){
-    const r=await fetch('/api/export-file?name='+encodeURIComponent(payload.filename)+'&reveal=1',{
-      method:'POST',
-      headers:{'Content-Type':'audio/midi'},
-      body:payload.bytes,
-    });
-    if(!r.ok) throw new Error('Save failed ('+r.status+')');
-    return r.json().catch(()=>({ok:true}));
-  }
-
-  function wire(id,kind){
-    const el=document.getElementById(id);
-    if(!el) return;
-    el.addEventListener('dragstart',e=>{
-      const payload=buildExportPayload(kind);
-      if(!payload){
-        e.preventDefault();
-        if(kind==='tracks') alert('Individual track export is coming soon.');
-        return;
-      }
-      const prev=APP.exportUrls[kind];
-      if(prev) URL.revokeObjectURL(prev);
-      const url=URL.createObjectURL(new Blob([payload.bytes],{type:'audio/midi'}));
-      APP.exportUrls[kind]=url;
-      const dt=e.dataTransfer;
-      if(dt){
-        dt.effectAllowed='copy';
-        // Most DAWs accept a real File in the drag payload better than URL-only payloads.
-        try{
-          if(dt.items&&typeof dt.items.add==='function'&&typeof File!=='undefined'){
-            const file=new File([payload.bytes],payload.filename,{type:'audio/midi'});
-            dt.items.add(file);
-          }
-        }catch{}
-        try{ dt.setData('text/plain',payload.filename); }catch{}
-        try{ dt.setData('text/uri-list',url); }catch{}
-        try{ dt.setData('DownloadURL',`audio/midi:${payload.filename}:${url}`); }catch{}
-        try{ dt.setData('application/x-midi-filename',payload.filename); }catch{}
-      }
-      el.classList.add('dragging');
-      setTimeout(()=>el.classList.remove('dragging'),220);
-    });
-    el.addEventListener('dragend',()=>el.classList.remove('dragging'));
-    el.addEventListener('click',async()=>{
-      const payload=buildExportPayload(kind);
-      if(!payload){
-        if(kind==='tracks') alert('Individual track export is coming soon.');
-        return;
-      }
-      try{
-        await saveForDaw(payload);
-      }catch(e){
-        alert('Could not save to DAW Exports folder: '+(e?.message||e));
-      }
-    });
-  }
-  wire('exportChord','chord');
-  wire('exportWhole','whole');
-  wire('exportTracks','tracks');
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -3211,12 +2842,9 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('cbAutoplay').addEventListener('change', function(){ APP.autoplay = this.checked; localStorage.setItem('autoplay', this.checked ? '1' : '0'); });
   document.getElementById('pbProgress').addEventListener('click',onProgressClick);
   initRollSeek();
-  initExportDragZones();
-  updateExportMeta();
 
-  // Download chord (hidden for now)
-  const btnChord=document.getElementById('btnDownloadChord');
-  if(btnChord) btnChord.addEventListener('click',downloadChord);
+  // Download chord
+  document.getElementById('btnDownloadChord').addEventListener('click',downloadChord);
 
   // Search
   const searchInput=document.getElementById('searchInput');
