@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // MIDI Library Server — personal use
-// Run: node library-server.js
+// Run: node library-server.js ["/path/to/MIDI Banks"]
+//   (or set MIDI_LIBRARY; defaults to ~/Documents/MIDI Banks)
 // Then open http://127.0.0.1:3722 in Chrome
 'use strict';
 
@@ -9,8 +10,10 @@ const fs   = require('fs');
 const path = require('path');
 const url  = require('url');
 const cp   = require('child_process');
+const os   = require('os');
 
-const LIBRARY = '/Users/tolga.oezdemir/Documents/MIDI Banks';
+const LIBRARY = path.resolve(process.argv[2] || process.env.MIDI_LIBRARY ||
+                             path.join(os.homedir(), 'Documents', 'MIDI Banks'));
 const PORT    = 3722;
 const HTML    = path.join(__dirname, 'index.library.html');
 const EXPORTS = path.join(__dirname, 'DAW Exports');
@@ -316,5 +319,6 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`\n  ♪  MIDI Library → http://127.0.0.1:${PORT}\n`);
   console.log(`  Library path: ${LIBRARY}\n`);
+  if (!fs.existsSync(LIBRARY)) console.warn(`  ⚠  Library folder not found — pass a path: node library-server.js "/path/to/MIDI Banks"\n`);
   console.log('  Open Chrome and navigate to http://127.0.0.1:3722\n');
 });
